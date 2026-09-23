@@ -604,8 +604,9 @@ async fn lcu_monitor_task(
     loop {
         let Some(lcu_pid) = get_lcu_process_id() else {
             let game_running = get_game_process_id().is_some();
+            let cached_champion_id = state.lock().unwrap().current_champion_id;
 
-            if game_running && current_champion_id > 0 {
+            if game_running && cached_champion_id > 0 {
                 // Some users configure LeagueClientUx to close when the match
                 // starts. Keep the standalone ChampR process and the already
                 // loaded overlay alive for the duration of League of Legends.exe.
@@ -784,8 +785,10 @@ async fn lcu_monitor_task(
                                     .and_then(|v| v.as_str());
 
                                 if event_type == Some("Delete") {
-                                    // Champion select closes before the game process is fully up.
-                                    // Keep the Mayhem overlay visible across that transition.
+                                    // Reset the monitor-side champion id so the same champion can
+                                    // trigger again next queue, but keep AppState's cached id and
+                                    // the Mayhem overlay alive while the actual game starts.
+                                    current_champion_id = 0;
                                     let rw = runes_weak.clone();
                                     let _ = slint::invoke_from_event_loop(move || {
                                         if let Some(win) = rw.upgrade() {
