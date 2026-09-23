@@ -380,6 +380,7 @@ fn main() {
     runes_window.on_rune_source_selected({
         let state_c = state.clone();
         let weak = runes_window.as_weak();
+        let sources_weak = sources_window.as_weak();
         let handle = rt_handle_ref.clone();
         move |label| {
             let label = label.to_string();
@@ -396,7 +397,7 @@ fn main() {
             };
             settings.save();
 
-            if let Some(win) = sources_window.as_weak().upgrade() {
+            if let Some(win) = sources_weak.upgrade() {
                 win.set_rune_source_label(SharedString::from(&label));
             }
 
