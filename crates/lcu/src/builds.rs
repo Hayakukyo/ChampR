@@ -192,35 +192,47 @@ pub async fn batch_apply(
     }
     let _ = fs::create_dir_all(&folder);
 
-    // New ChampR data can be served by the API, while classic sources still
-    // live as @champ-r/* packages. Prefer the live API when the source is
-    // advertised there and fall back to the legacy package feed otherwise.
-    let live_source_keys = web::fetch_sources()
-        .await
-        .unwrap_or_default()
-        .into_iter()
-        .map(|item| item.value)
-        .collect::<Vec<_>>();
-
+    // Current OP.GG sources are fetched directly from OP.GG. Older ChampR
+    // sources remain available through their historical @champ-r/* packages.
     let mut tasks = vec![];
     let mut package_sources = Vec::new();
 
     for source in selected_sources {
-        if live_source_keys.iter().any(|key| key == &source) {
-            for champion in champions_map.keys() {
+        if web::source_is_live(&source).await {
+            for (champion, champion_info) in champions_map.iter() {
                 let source = source.clone();
                 let champion = champion.clone();
+                let champion_id = champion_info.key.parse::<i64>().ok();
                 let logs = logs.clone();
-                let config_folder = folder.clone();
+                let target_dir = dir.clone();
 
                 let task = async move {
-                    info!("[apply_builds] started {:?} {:?}", &source, &champion);
-                    let r = fetch_and_apply(&config_folder, &source, &champion).await;
-                    if r.is_ok() {
-                        let mut logs = logs.lock().unwrap();
-                        logs.push((source.clone(), champion.clone()));
-                    } else {
-                        info!("[apply_builds] failed {:?} {:?}", &source, &champion);
+                    let Some(champion_id) = champion_id else {
+                        info!("[apply_builds] invalid champion id {:?}", &champion);
+                        return;
+                    };
+
+                    info!("[apply_builds] direct {:?} {:?}", &source, &champion);
+                    match crate::opgg_native::fetch_builds(champion_id, &champion, &source).await {
+                        Ok(sections) => {
+                            apply_builds_from_data(
+                                sections,
+                                &target_dir,
+                                &source,
+                                &champion,
+                                is_tencent,
+                            );
+                            let mut logs = logs.lock().unwrap();
+                            logs.push((source.clone(), champion.clone()));
+                        }
+                        Err(err) => {
+                            info!(
+                                "[apply_builds] direct source failed {:?} {:?}: {:?}",
+                                &source,
+                                &champion,
+                                err
+                            );
+                        }
                     }
                 };
                 tasks.push(task);
