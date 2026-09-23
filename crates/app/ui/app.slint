@@ -248,7 +248,7 @@ export component SourcesWindow inherits Window {
                         width: 10px;
                         height: 10px;
                         border-radius: 5px;
-                        background: root.lcu-status == "connected"
+                        background: root.lcu-status == "connected" || root.lcu-status == "in-game"
                             ? #24b34b
                             : root.lcu-status == "authorizing" || root.lcu-status == "needs-admin"
                             ? #d39a23
@@ -256,7 +256,7 @@ export component SourcesWindow inherits Window {
                     }
 
                     Text {
-                        text: root.lcu-status == "connected"
+                        text: root.lcu-status == "connected" || root.lcu-status == "in-game"
                             ? root.lcu-summoner
                             : root.lcu-status == "authorizing"
                             ? "Requesting administrator access…"
@@ -491,11 +491,14 @@ export component RunesWindow inherits Window {
 
 export component HextechWindow inherits Window {
     title: "ChampR - Hextech Recommendations";
-    preferred-width: 390px;
-    preferred-height: 540px;
-    min-width: 340px;
-    min-height: 420px;
+    preferred-width: 300px;
+    preferred-height: 370px;
+    min-width: 280px;
+    min-height: 330px;
     always-on-top: true;
+    no-frame: true;
+    background: transparent;
+    default-font-family: "Microsoft YaHei UI";
 
     in-out property <string> champion-name: "";
     in-out property <string> status: "loading";
@@ -504,141 +507,170 @@ export component HextechWindow inherits Window {
 
     callback close-requested();
 
-    VerticalBox {
-        padding: 12px;
-        spacing: 8px;
+    Rectangle {
+        border-radius: 10px;
+        background: #111722dc;
+        border-width: 1px;
+        border-color: #ffffff24;
 
-        HorizontalBox {
-            Text {
-                text: root.champion-name != ""
-                    ? root.champion-name + " - Hextech"
-                    : "Hextech Recommendations";
-                font-size: 19px;
-                font-weight: 600;
-                vertical-alignment: center;
-            }
-            Rectangle { horizontal-stretch: 1; }
-            Button {
-                text: "Hide";
-                clicked => { root.close-requested(); }
-            }
-        }
+        VerticalBox {
+            padding: 10px;
+            spacing: 6px;
 
-        Text {
-            text: root.source-text;
-            font-size: 11px;
-            color: #888888;
-        }
+            HorizontalBox {
+                spacing: 6px;
 
-        Rectangle {
-            height: 1px;
-            background: #dddddd;
-        }
+                VerticalBox {
+                    horizontal-stretch: 1;
+                    spacing: 1px;
 
-        if root.status == "loading" : Rectangle {
-            vertical-stretch: 1;
-            Text {
-                text: "Loading augment recommendations…";
-                font-size: 13px;
-                color: #777777;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-            }
-        }
-
-        if root.status == "error" : Rectangle {
-            vertical-stretch: 1;
-            Text {
-                text: "No Mayhem augment data found for this champion.";
-                font-size: 13px;
-                color: #bb3333;
-                wrap: word-wrap;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-            }
-        }
-
-        if root.status == "success" : ListView {
-            vertical-stretch: 1;
-
-            for augment[index] in root.augments : Rectangle {
-                height: 70px;
-                border-width: 1px;
-                border-color: #e0e0e0;
-                border-radius: 5px;
-                background: #fafafa;
-
-                HorizontalBox {
-                    padding: 7px;
-                    spacing: 8px;
-
-                    Rectangle {
-                        width: 28px;
-                        height: 28px;
-                        border-radius: 14px;
-                        background: augment.rarity == "Prismatic"
-                            ? #eee8ff
-                            : augment.rarity == "Gold"
-                            ? #fff3cf
-                            : #eeeeee;
-
-                        Text {
-                            text: "" + augment.rank;
-                            font-size: 12px;
-                            font-weight: 700;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
-                        }
+                    Text {
+                        text: root.champion-name != ""
+                            ? root.champion-name + " · 海克斯推荐"
+                            : "海克斯推荐";
+                        font-size: 15px;
+                        font-weight: 700;
+                        color: #ffffff;
+                        overflow: elide;
                     }
 
-                    VerticalBox {
-                        horizontal-stretch: 1;
-                        spacing: 2px;
+                    Text {
+                        text: root.source-text;
+                        font-size: 9px;
+                        color: #aab2c0;
+                    }
+                }
 
-                        HorizontalBox {
-                            spacing: 6px;
+                Rectangle {
+                    width: 30px;
+                    height: 24px;
+                    border-radius: 5px;
+                    background: #ffffff16;
+
+                    Text {
+                        text: "×";
+                        font-size: 15px;
+                        color: #d8dde6;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+
+                    TouchArea {
+                        clicked => { root.close-requested(); }
+                    }
+                }
+            }
+
+            Rectangle {
+                height: 1px;
+                background: #ffffff20;
+            }
+
+            if root.status == "loading" : Rectangle {
+                vertical-stretch: 1;
+                Text {
+                    text: "正在读取海克斯推荐…";
+                    font-size: 11px;
+                    color: #c7ccd5;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+
+            if root.status == "error" : Rectangle {
+                vertical-stretch: 1;
+                Text {
+                    text: "没有读取到这个英雄的海克斯数据";
+                    font-size: 11px;
+                    color: #ffb4b4;
+                    wrap: word-wrap;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+
+            if root.status == "success" : ListView {
+                vertical-stretch: 1;
+
+                for augment[index] in root.augments : Rectangle {
+                    height: 49px;
+                    border-radius: 6px;
+                    background: #ffffff0e;
+
+                    HorizontalBox {
+                        padding: 5px;
+                        spacing: 6px;
+
+                        Rectangle {
+                            width: 23px;
+                            height: 23px;
+                            border-radius: 12px;
+                            background: augment.rarity == "Prismatic"
+                                ? #8f73d9cc
+                                : augment.rarity == "Gold"
+                                ? #c99535cc
+                                : #7d8795aa;
 
                             Text {
-                                text: augment.name;
-                                font-size: 13px;
-                                font-weight: 600;
-                                overflow: elide;
-                                horizontal-stretch: 1;
-                            }
-
-                            Text {
-                                text: augment.rarity;
+                                text: "" + augment.rank;
                                 font-size: 10px;
-                                color: #777777;
+                                font-weight: 700;
+                                color: #ffffff;
+                                horizontal-alignment: center;
                                 vertical-alignment: center;
                             }
                         }
 
-                        HorizontalBox {
-                            spacing: 10px;
+                        VerticalBox {
+                            horizontal-stretch: 1;
+                            spacing: 1px;
+
+                            HorizontalBox {
+                                spacing: 5px;
+
+                                Text {
+                                    text: augment.name;
+                                    font-size: 11px;
+                                    font-weight: 700;
+                                    color: #ffffff;
+                                    overflow: elide;
+                                    horizontal-stretch: 1;
+                                }
+
+                                Text {
+                                    text: augment.tier;
+                                    font-size: 9px;
+                                    font-weight: 600;
+                                    color: #e7cf91;
+                                }
+                            }
 
                             Text {
-                                text: augment.tier;
-                                font-size: 11px;
-                                color: #555555;
+                                text: augment.description;
+                                font-size: 9px;
+                                color: #c3c9d2;
+                                overflow: elide;
                             }
-                            Text {
-                                text: augment.popular;
-                                font-size: 10px;
-                                color: #888888;
-                            }
-                            Text {
-                                text: augment.performance;
-                                font-size: 10px;
-                                color: #888888;
-                            }
-                        }
 
-                        Text {
-                            text: augment.description;
-                            font-size: 10px;
-                            color: #888888;
-                            overflow: elide;
+                            HorizontalBox {
+                                spacing: 8px;
+
+                                Text {
+                                    text: augment.rarity;
+                                    font-size: 8px;
+                                    color: #9fa8b5;
+                                }
+                                Text {
+                                    text: augment.popular;
+                                    font-size: 8px;
+                                    color: #9fa8b5;
+                                }
+                                Text {
+                                    text: augment.performance;
+                                    font-size: 8px;
+                                    color: #9fa8b5;
+                                }
+                            }
                         }
                     }
                 }
