@@ -14,7 +14,7 @@ use slint::{ComponentHandle, Image, ModelRc, SharedPixelBuffer, SharedString, Ve
 
 use lcu::{
     builds::Rune,
-    cmd::{get_cmd_output, get_lcu_process_id},
+    cmd::{get_cmd_output, get_game_process_id, get_lcu_process_id},
     lcu_api::{self, make_sub_msg},
     mayhem,
     reqwest_websocket::Message,
@@ -603,7 +603,41 @@ async fn lcu_monitor_task(
 
     loop {
         let Some(lcu_pid) = get_lcu_process_id() else {
-            if current_lcu_pid.is_some() || !current_auth_url.is_empty() {
+            let game_running = get_game_process_id().is_some();
+
+            if game_running && current_champion_id > 0 {
+                // Some users configure LeagueClientUx to close when the match
+                // starts. Keep the standalone ChampR process and the already
+                // loaded overlay alive for the duration of League of Legends.exe.
+                current_auth_url.clear();
+                current_lcu_pid = None;
+                auth_prompted_for_pid = None;
+
+                {
+                    let mut s = state.lock().unwrap();
+                    s.auth_url.clear();
+                }
+
+                let sw = sources_weak.clone();
+                let rw = runes_weak.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(win) = sw.upgrade() {
+                        win.set_lcu_status(SharedString::from("in-game"));
+                        win.set_lcu_summoner(SharedString::from("Game running · client closed"));
+                    }
+                    if let Some(win) = rw.upgrade() {
+                        win.hide().unwrap();
+                    }
+                });
+
+                tokio::time::sleep(Duration::from_millis(1200)).await;
+                continue;
+            }
+
+            if current_lcu_pid.is_some()
+                || !current_auth_url.is_empty()
+                || current_champion_id != 0
+            {
                 current_auth_url.clear();
                 current_champion_id = 0;
                 current_lcu_pid = None;
@@ -635,7 +669,7 @@ async fn lcu_monitor_task(
                     }
                 });
             }
-            tokio::time::sleep(Duration::from_millis(2500)).await;
+            tokio::time::sleep(Duration::from_millis(1800)).await;
             continue;
         };
 
@@ -750,23 +784,16 @@ async fn lcu_monitor_task(
                                     .and_then(|v| v.as_str());
 
                                 if event_type == Some("Delete") {
-                                    // Session ended
-                                    if current_champion_id != 0 {
-                                        current_champion_id = 0;
-                                        state.lock().unwrap().current_champion_id = 0;
-                                        let rw = runes_weak.clone();
-                                        let hw = hextech_weak.clone();
-                                        let _ = slint::invoke_from_event_loop(move || {
-                                            if let Some(win) = rw.upgrade() {
-                                                win.set_has_champion(false);
-                                                win.set_champion_id(0);
-                                                win.hide().unwrap();
-                                            }
-                                            if let Some(win) = hw.upgrade() {
-                                                win.hide().unwrap();
-                                            }
-                                        });
-                                    }
+                                    // Champion select closes before the game process is fully up.
+                                    // Keep the Mayhem overlay visible across that transition.
+                                    let rw = runes_weak.clone();
+                                    let _ = slint::invoke_from_event_loop(move || {
+                                        if let Some(win) = rw.upgrade() {
+                                            win.set_has_champion(false);
+                                            win.set_champion_id(0);
+                                            win.hide().unwrap();
+                                        }
+                                    });
                                     continue;
                                 }
 
@@ -941,7 +968,18 @@ async fn show_hextech_overlay(
         });
     }
 
-    match mayhem::fetch_augments(&champion_alias).await {
+    let auth_url = {
+        let s = state.lock().unwrap();
+        s.auth_url.clone()
+    };
+
+    match mayhem::fetch_augments(
+        champion_id,
+        &champion_alias,
+        if auth_url.is_empty() { None } else { Some(auth_url.as_str()) },
+    )
+    .await
+    {
         Ok(augments) => {
             let models = augments
                 .into_iter()
@@ -951,20 +989,20 @@ async fn show_hextech_overlay(
                     name: SharedString::from(&augment.name),
                     rarity: SharedString::from(&augment.rarity),
                     tier: SharedString::from(if augment.tier > 0 {
-                        format!("Tier {}", augment.tier)
+                        format!("T{}", augment.tier)
                     } else {
                         String::new()
                     }),
                     popular: SharedString::from(
                         augment
                             .popularity
-                            .map(|value| format!("Popular {:.2}", value))
+                            .map(|value| format!("热度 {:.2}", value))
                             .unwrap_or_default(),
                     ),
                     performance: SharedString::from(
                         augment
                             .performance
-                            .map(|value| format!("Perf {:+.2}", value))
+                            .map(|value| format!("表现 {:+.1}", value))
                             .unwrap_or_default(),
                     ),
                     description: SharedString::from(&augment.description),
