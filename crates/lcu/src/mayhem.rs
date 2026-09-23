@@ -164,4 +164,16 @@ mod tests {
         assert_eq!(champion_slug("Fizz"), "fizz");
         assert_eq!(champion_slug("Kaisa"), "kaisa");
     }
+
+    #[test]
+    fn parses_embedded_opgg_augment_payload() {
+        let sample = r#"{\"id\":123,\"tier\":1,\"performance\":0.42,\"popular\":0.31,\"name\":\"神射法师\",\"key\":\"augment_key\",\"largeIcon\":\"large.png\",\"smallIcon\":\"small.png\",\"rarity\":4,\"desc\":\"<b>测试说明</b>\",\"tooltip\":\"tooltip\"}"#;
+        let parsed = parse_augments(sample).expect("sample augment should parse");
+
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].id, 123);
+        assert_eq!(parsed[0].name, "神射法师");
+        assert_eq!(parsed[0].rarity, "Gold");
+        assert_eq!(parsed[0].description, "测试说明");
+    }
 }
