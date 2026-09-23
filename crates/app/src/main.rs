@@ -359,7 +359,10 @@ fn main() {
                 let hw = hextech_weak.clone();
                 let st = state_c.clone();
                 handle.spawn(async move {
-                    show_hextech_overlay(hw, st, champion_id).await;
+                    let auth_url = st.lock().unwrap().auth_url.clone();
+                    if !auth_url.is_empty() && is_aram_mayhem_game(&auth_url).await {
+                        show_hextech_overlay(hw, st, champion_id).await;
+                    }
                 });
             }
         }
@@ -752,10 +755,14 @@ async fn lcu_monitor_task(
                                         current_champion_id = 0;
                                         state.lock().unwrap().current_champion_id = 0;
                                         let rw = runes_weak.clone();
+                                        let hw = hextech_weak.clone();
                                         let _ = slint::invoke_from_event_loop(move || {
                                             if let Some(win) = rw.upgrade() {
                                                 win.set_has_champion(false);
                                                 win.set_champion_id(0);
+                                                win.hide().unwrap();
+                                            }
+                                            if let Some(win) = hw.upgrade() {
                                                 win.hide().unwrap();
                                             }
                                         });
