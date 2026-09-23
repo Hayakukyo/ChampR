@@ -14,6 +14,7 @@ use kv_log_macro::{error, info, warn};
 use reqwest::header::USER_AGENT;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::BTreeMap;
 use tar::Archive;
 
 use crate::{
@@ -73,11 +74,32 @@ pub fn service_url() -> &'static str {
 }
 
 pub async fn fetch_sources() -> Result<Vec<SourceItem>, FetchError> {
-    Ok(builtin_sources())
+    Ok(fetch_sources_with_fallback().await)
 }
 
 pub async fn fetch_sources_with_fallback() -> Vec<SourceItem> {
-    builtin_sources()
+    let sources = builtin_sources();
+    let tasks = sources
+        .into_iter()
+        .map(|source| async move { enrich_source_metadata(source).await });
+    join_all(tasks).await
+}
+
+async fn enrich_source_metadata(mut source: SourceItem) -> SourceItem {
+    if opgg_native::is_native_source(&source.value) {
+        if let Ok((version, updated_at)) = opgg_native::source_metadata(&source.value).await {
+            source.version = version;
+            source.updated_at = updated_at;
+        }
+        return source;
+    }
+
+    if let Ok((version, updated_at)) = get_remote_package_metadata(&source.value).await {
+        source.version = version;
+        source.updated_at = updated_at;
+    }
+
+    source
 }
 
 pub async fn source_is_live(source: &str) -> bool {
@@ -389,6 +411,16 @@ pub struct Package {
     pub dist: Dist,
 }
 
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+struct PackageRegistry {
+    #[serde(rename = "dist-tags")]
+    dist_tags: BTreeMap<String, String>,
+    #[serde(default)]
+    time: BTreeMap<String, String>,
+    #[serde(default)]
+    versions: BTreeMap<String, Package>,
+}
+
 pub async fn get_remote_package_data(source: &String) -> Result<(String, String), reqwest::Error> {
     let r = reqwest::get(format!(
         "https://registry.npmjs.org/@champ-r%2F{source}/latest"
@@ -397,6 +429,35 @@ pub async fn get_remote_package_data(source: &String) -> Result<(String, String)
     .error_for_status()?;
     let pak = r.json::<Package>().await?;
     Ok((pak.version, pak.dist.tarball))
+}
+
+pub async fn get_remote_package_metadata(
+    source: &str,
+) -> Result<(String, String), reqwest::Error> {
+    let r = reqwest::get(format!(
+        "https://registry.npmjs.org/@champ-r%2F{source}"
+    ))
+    .await?
+    .error_for_status()?;
+    let registry = r.json::<PackageRegistry>().await?;
+    let Some(latest) = registry.dist_tags.get("latest") else {
+        return Ok((String::new(), String::new()));
+    };
+
+    let display_version = registry
+        .versions
+        .get(latest)
+        .map(|package| {
+            if package.source_version.is_empty() {
+                package.version.clone()
+            } else {
+                package.source_version.clone()
+            }
+        })
+        .unwrap_or_else(|| latest.clone());
+    let updated_at = registry.time.get(latest).cloned().unwrap_or_default();
+
+    Ok((display_version, updated_at))
 }
 
 pub async fn download_and_extract_tgz(url: &str, output_dir: &str) -> io::Result<()> {
