@@ -5,11 +5,12 @@ export struct SourceModel {
     label: string,
     value: string,
     mode: string,
+    version: string,
+    updated: string,
     selected: bool,
 }
 
 export struct RuneModel {
-    /// Display index (for identification in callbacks)
     index: int,
     name: string,
     position: string,
@@ -20,186 +21,293 @@ export struct RuneModel {
 }
 
 // ---------------------------------------------------------------------------
-//  SourcesWindow – source selection, Apply Builds, LCU status
+//  Main window – restored classic two-column ChampR layout
 // ---------------------------------------------------------------------------
 
 export component SourcesWindow inherits Window {
-    title: "ChampR";
-    preferred-width: 520px;
-    preferred-height: 700px;
+    title: "ChampR - Builds, Runes, All in One. v2.0.2-b8";
+    preferred-width: 760px;
+    preferred-height: 540px;
+    min-width: 700px;
+    min-height: 500px;
 
-    // --- properties ---
-    in-out property <string> status: "loading";          // "loading" | "success" | "error"
-    in-out property <string> lcu-status: "disconnected"; // "disconnected" | "authorizing" | "needs-admin" | "connected"
+    in-out property <string> status: "loading";
+    in-out property <string> lcu-status: "disconnected";
     in-out property <string> lcu-summoner: "";
     in-out property <bool> applying-builds: false;
     in-out property <string> apply-status: "";
     in-out property <[SourceModel]> sources;
     in-out property <bool> has-selected-sources: false;
+    in-out property <[string]> rune-source-labels;
+    in-out property <string> rune-source-label: "";
 
-    // --- callbacks ---
     callback apply-builds-clicked();
     callback source-toggled(int, bool);
     callback select-all-sources();
     callback clear-sources();
+    callback rune-source-selected(string);
 
     VerticalBox {
         padding: 16px;
         spacing: 12px;
 
-        Text {
-            text: "ChampR";
-            font-size: 28px;
-            font-weight: 700;
-            horizontal-alignment: center;
-        }
-        Text {
-            text: "Builds, runes, all in one";
-            font-size: 13px;
-            horizontal-alignment: center;
-            color: #888888;
-        }
-
         HorizontalBox {
-            spacing: 8px;
-            alignment: center;
+            spacing: 18px;
+            vertical-stretch: 1;
 
-            Rectangle {
-                width: 10px;
-                height: 10px;
-                border-radius: 5px;
-                background: root.lcu-status == "connected" ? #22cc44 : #cc3333;
-            }
-            Text {
-                text: root.lcu-status == "connected"
-                    ? "League Client: " + root.lcu-summoner
-                    : root.lcu-status == "authorizing"
-                    ? "League Client detected. Requesting admin access..."
-                    : root.lcu-status == "needs-admin"
-                    ? "League Client detected. Admin access is required once to read LCU credentials."
-                    : "League Client not detected";
-                font-size: 13px;
-                color: root.lcu-status == "connected"
-                    ? #22cc44
-                    : root.lcu-status == "authorizing"
-                    ? #cc9a22
-                    : root.lcu-status == "needs-admin"
-                    ? #cc9a22
-                    : #cc3333;
-                vertical-alignment: center;
-            }
-        }
-
-        if root.status == "loading" : HorizontalBox {
-            alignment: center;
-            Text {
-                text: "Loading champion and source data…";
-                font-size: 14px;
-                color: #888888;
-            }
-        }
-
-        if root.status == "error" : Text {
-            text: "Failed to load champion data. Check your network.";
-            font-size: 14px;
-            horizontal-alignment: center;
-            color: #cc3333;
-        }
-
-        if root.status == "success" : VerticalBox {
-            spacing: 8px;
-
-            HorizontalBox {
+            // Left side: classic "Sources of Builds" section
+            VerticalBox {
+                horizontal-stretch: 3;
                 spacing: 8px;
-                Text {
-                    text: "Build sources";
-                    font-size: 16px;
-                    font-weight: 600;
-                    vertical-alignment: center;
-                }
-                Rectangle { horizontal-stretch: 1; }
-                Button {
-                    text: "All";
-                    clicked => { root.select-all-sources(); }
-                }
-                Button {
-                    text: "Clear";
-                    clicked => { root.clear-sources(); }
-                }
-            }
 
-            ListView {
-                height: 290px;
-                for source[index] in root.sources : Rectangle {
-                    height: 42px;
-                    border-width: 1px;
-                    border-color: #eeeeee;
-                    border-radius: 5px;
-                    background: #fafafa;
+                HorizontalBox {
+                    Text {
+                        text: "Sources of Builds";
+                        font-size: 20px;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    Button {
+                        text: "All";
+                        enabled: root.status == "success";
+                        clicked => { root.select-all-sources(); }
+                    }
+                    Button {
+                        text: "Clear";
+                        enabled: root.status == "success";
+                        clicked => { root.clear-sources(); }
+                    }
+                }
 
-                    HorizontalBox {
-                        padding: 7px;
-                        spacing: 8px;
-                        CheckBox {
-                            text: source.label;
-                            checked: source.selected;
-                            toggled => {
-                                root.source-toggled(source.index, self.checked);
+                Rectangle {
+                    height: 1px;
+                    background: #dddddd;
+                }
+
+                if root.status == "loading" : Rectangle {
+                    vertical-stretch: 1;
+                    Text {
+                        text: "Loading source information…";
+                        font-size: 14px;
+                        color: #777777;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+
+                if root.status == "error" : Rectangle {
+                    vertical-stretch: 1;
+                    Text {
+                        text: "Failed to load source data.";
+                        font-size: 14px;
+                        color: #bb3333;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+
+                if root.status == "success" : ListView {
+                    vertical-stretch: 1;
+
+                    for source[index] in root.sources : Rectangle {
+                        height: 66px;
+                        border-width: 1px;
+                        border-color: #e2e2e2;
+                        border-radius: 5px;
+                        background: source.selected ? #f7f9fb : #ffffff;
+
+                        HorizontalBox {
+                            padding: 8px;
+                            spacing: 10px;
+
+                            CheckBox {
+                                width: 158px;
+                                text: source.label;
+                                checked: source.selected;
+                                toggled => {
+                                    root.source-toggled(source.index, self.checked);
+                                }
                             }
-                        }
-                        Rectangle { horizontal-stretch: 1; }
-                        Text {
-                            text: source.mode;
-                            font-size: 11px;
-                            color: #999999;
-                            vertical-alignment: center;
+
+                            VerticalBox {
+                                alignment: center;
+                                spacing: 2px;
+                                horizontal-stretch: 1;
+
+                                Text {
+                                    text: source.version;
+                                    font-size: 11px;
+                                    color: #666666;
+                                    overflow: elide;
+                                }
+                                Text {
+                                    text: source.updated;
+                                    font-size: 11px;
+                                    color: #888888;
+                                    overflow: elide;
+                                }
+                            }
+
+                            Rectangle {
+                                width: 46px;
+                                height: 24px;
+                                border-radius: 12px;
+                                background: source.mode == "ARAM" ? #eef5ff : #f1f1f1;
+
+                                Text {
+                                    text: source.mode;
+                                    font-size: 10px;
+                                    font-weight: 600;
+                                    color: #555555;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
                         }
                     }
                 }
             }
+
+            Rectangle {
+                width: 1px;
+                background: #dddddd;
+            }
+
+            // Right side: rune source + client state, like the old layout
+            VerticalBox {
+                horizontal-stretch: 2;
+                spacing: 10px;
+
+                Text {
+                    text: "Rune Source";
+                    font-size: 20px;
+                    font-weight: 600;
+                }
+
+                ComboBox {
+                    model: root.rune-source-labels;
+                    current-value <=> root.rune-source-label;
+                    enabled: root.status == "success";
+                    selected(value) => {
+                        root.rune-source-selected(value);
+                    }
+                }
+
+                Text {
+                    text: "This source is used for the rune recommendations shown during champion select.";
+                    font-size: 12px;
+                    color: #777777;
+                    wrap: word-wrap;
+                }
+
+                Rectangle {
+                    height: 1px;
+                    background: #dddddd;
+                }
+
+                Text {
+                    text: "League Client";
+                    font-size: 15px;
+                    font-weight: 600;
+                }
+
+                HorizontalBox {
+                    spacing: 8px;
+
+                    Rectangle {
+                        width: 10px;
+                        height: 10px;
+                        border-radius: 5px;
+                        background: root.lcu-status == "connected"
+                            ? #24b34b
+                            : root.lcu-status == "authorizing" || root.lcu-status == "needs-admin"
+                            ? #d39a23
+                            : #c63d3d;
+                    }
+
+                    Text {
+                        text: root.lcu-status == "connected"
+                            ? root.lcu-summoner
+                            : root.lcu-status == "authorizing"
+                            ? "Requesting administrator access…"
+                            : root.lcu-status == "needs-admin"
+                            ? "Administrator access required"
+                            : "Disconnected";
+                        font-size: 12px;
+                        color: #555555;
+                        wrap: word-wrap;
+                        vertical-alignment: center;
+                    }
+                }
+
+                Rectangle { vertical-stretch: 1; }
+
+                Text {
+                    text: "Build data is written to the League Recommended item-set folder.";
+                    font-size: 11px;
+                    color: #999999;
+                    wrap: word-wrap;
+                }
+            }
+        }
+
+        Rectangle {
+            height: 1px;
+            background: #dddddd;
         }
 
         HorizontalBox {
-            alignment: center;
             spacing: 12px;
 
+            VerticalBox {
+                horizontal-stretch: 1;
+                alignment: center;
+
+                Text {
+                    text: root.apply-status != ""
+                        ? root.apply-status
+                        : root.status == "loading"
+                        ? "Loading…"
+                        : root.lcu-status == "connected"
+                        ? "Connected to League of Legends."
+                        : "Disconnected.";
+                    font-size: 12px;
+                    color: root.apply-status != "" ? #555555 : #777777;
+                    overflow: elide;
+                }
+
+                if !root.has-selected-sources && root.status == "success" : Text {
+                    text: "Select at least one build source.";
+                    font-size: 11px;
+                    color: #b06b21;
+                }
+            }
+
             Button {
+                width: 128px;
                 text: root.applying-builds ? "Applying…" : "Apply Builds";
                 enabled: !root.applying-builds
                     && root.lcu-status == "connected"
-                    && root.has-selected-sources;
+                    && root.has-selected-sources
+                    && root.status == "success";
                 clicked => {
                     root.apply-builds-clicked();
                 }
             }
         }
-
-        if !root.has-selected-sources && root.status == "success" : Text {
-            text: "Select at least one source.";
-            font-size: 12px;
-            horizontal-alignment: center;
-            color: #999999;
-        }
-
-        if root.apply-status != "" : Text {
-            text: root.apply-status;
-            font-size: 13px;
-            horizontal-alignment: center;
-            color: #666666;
-        }
     }
 }
 
 // ---------------------------------------------------------------------------
-//  RunesWindow – champion runes overlay with source picker + apply buttons
+//  Champion-select rune window
 // ---------------------------------------------------------------------------
 
 export component RunesWindow inherits Window {
-    title: "Runes";
+    title: "ChampR - Runes";
     preferred-width: 500px;
     preferred-height: 660px;
 
-    // --- properties ---
     in-out property <int> champion-id: 0;
     in-out property <string> champion-name: "";
     in-out property <image> champion-avatar;
@@ -210,7 +318,6 @@ export component RunesWindow inherits Window {
     in-out property <[string]> rune-source-labels;
     in-out property <string> rune-source-label: "";
 
-    // --- callbacks ---
     callback close-requested();
     callback apply-rune-clicked(int);
     callback rune-source-selected(string);
