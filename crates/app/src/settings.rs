@@ -11,6 +11,13 @@ pub struct Settings {
     /// Which source to show runes from in the overlay window
     #[serde(default)]
     pub rune_source: String,
+    /// Show the always-on-top ARAM Mayhem augment recommendation window.
+    #[serde(default = "default_true")]
+    pub hextech_overlay: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn settings_path() -> PathBuf {
