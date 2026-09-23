@@ -16,7 +16,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tar::Archive;
 
-use crate::{\n    builds::{self, BuildData, ItemBuild},\n    source::{builtin_sources, SourceItem},\n};
+use crate::{
+    builds::{self, BuildData, ItemBuild},
+    source::{builtin_sources, SourceItem},
+};
 
 const BUILD_SERVER_URL: &str = env!("CHAMPR_BUILD_SERVER_URL");
 const DATA_DRAGON_BASE_URL: &str = "https://ddragon.leagueoflegends.com";
