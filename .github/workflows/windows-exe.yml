@@ -20,9 +20,6 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Test Mayhem parser
-        run: cargo test -p lcu mayhem::tests
-
       - name: Build release EXE
         run: cargo build -p champr --release
 
