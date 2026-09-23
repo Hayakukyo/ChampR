@@ -15,6 +15,28 @@ pub fn is_native_source(source: &str) -> bool {
     matches!(source, OP_GG_RANKED | OP_GG_ARAM)
 }
 
+pub async fn source_metadata(source: &str) -> anyhow::Result<(String, String)> {
+    let client = Client::new();
+    let mode = match source {
+        OP_GG_RANKED => GameMode::Ranked,
+        OP_GG_ARAM => GameMode::Aram,
+        _ => return Err(anyhow!("unsupported native OP.GG source: {source}")),
+    };
+
+    let response = client
+        .champion_list(mode)
+        .await
+        .context("fetch OP.GG source metadata")?;
+
+    let updated_at = response
+        .meta
+        .analyzed_at
+        .or(response.meta.cached_at)
+        .unwrap_or_default();
+
+    Ok((response.meta.version, updated_at))
+}
+
 pub async fn fetch_builds(
     champion_id: i64,
     champion_alias: &str,
