@@ -333,6 +333,60 @@ fn main() {
         }
     });
 
+    // -- Hextech overlay toggle --
+    sources_window.on_hextech_overlay_toggled({
+        let state_c = state.clone();
+        let sources_weak = sources_window.as_weak();
+        let hextech_weak = hextech_window.as_weak();
+        let handle = rt_handle_ref.clone();
+        move |enabled| {
+            let (champion_id, settings) = {
+                let mut s = state_c.lock().unwrap();
+                s.hextech_overlay = enabled;
+                (s.current_champion_id, settings_snapshot(&s))
+            };
+            settings.save();
+
+            if let Some(win) = sources_weak.upgrade() {
+                win.set_hextech_overlay_enabled(enabled);
+            }
+
+            if !enabled {
+                if let Some(win) = hextech_weak.upgrade() {
+                    win.hide().unwrap();
+                }
+            } else if champion_id > 0 {
+                let hw = hextech_weak.clone();
+                let st = state_c.clone();
+                handle.spawn(async move {
+                    show_hextech_overlay(hw, st, champion_id).await;
+                });
+            }
+        }
+    });
+
+    // -- Hextech overlay: hide/disable --
+    hextech_window.on_close_requested({
+        let state_c = state.clone();
+        let sources_weak = sources_window.as_weak();
+        let hextech_weak = hextech_window.as_weak();
+        move || {
+            let settings = {
+                let mut s = state_c.lock().unwrap();
+                s.hextech_overlay = false;
+                settings_snapshot(&s)
+            };
+            settings.save();
+
+            if let Some(win) = sources_weak.upgrade() {
+                win.set_hextech_overlay_enabled(false);
+            }
+            if let Some(win) = hextech_weak.upgrade() {
+                win.hide().unwrap();
+            }
+        }
+    });
+
     // -- Runes window: close --
     let runes_weak = runes_window.as_weak();
     runes_window.on_close_requested(move || {
@@ -430,8 +484,14 @@ fn main() {
 
     let runes_weak2 = runes_window.as_weak();
     let sources_weak3 = sources_window.as_weak();
+    let hextech_weak2 = hextech_window.as_weak();
     let state_c3 = state.clone();
-    rt_handle.spawn(lcu_monitor_task(sources_weak3, runes_weak2, state_c3));
+    rt_handle.spawn(lcu_monitor_task(
+        sources_weak3,
+        runes_weak2,
+        hextech_weak2,
+        state_c3,
+    ));
 
     // -- Show sources window and run event loop --
     sources_window.show().unwrap();
@@ -530,6 +590,7 @@ async fn fetch_sources_task(
 async fn lcu_monitor_task(
     sources_weak: Weak<SourcesWindow>,
     runes_weak: Weak<RunesWindow>,
+    hextech_weak: Weak<HextechWindow>,
     state: SharedState,
 ) {
     let mut current_auth_url = String::new();
@@ -555,6 +616,7 @@ async fn lcu_monitor_task(
 
                 let sw = sources_weak.clone();
                 let rw = runes_weak.clone();
+                let hw = hextech_weak.clone();
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(win) = sw.upgrade() {
                         win.set_lcu_status(SharedString::from("disconnected"));
@@ -563,6 +625,9 @@ async fn lcu_monitor_task(
                     if let Some(win) = rw.upgrade() {
                         win.set_has_champion(false);
                         win.set_champion_id(0);
+                        win.hide().unwrap();
+                    }
+                    if let Some(win) = hw.upgrade() {
                         win.hide().unwrap();
                     }
                 });
@@ -707,11 +772,20 @@ async fn lcu_monitor_task(
                                     state.lock().unwrap().current_champion_id = cid;
                                     info!("champion id changed: {}", cid);
 
-                                    // Update runes window
+                                    // Update Hextech overlay and rune window.
+                                    let show_hextech = state.lock().unwrap().hextech_overlay;
+                                    if show_hextech {
+                                        show_hextech_overlay(
+                                            hextech_weak.clone(),
+                                            state.clone(),
+                                            cid,
+                                        )
+                                        .await;
+                                    }
+
                                     let rw = runes_weak.clone();
                                     let auth = current_auth_url.clone();
                                     let st = state.clone();
-
                                     show_champion_runes(rw, st, auth, cid).await;
                                 }
                             }
