@@ -391,20 +391,29 @@ async fn fetch_sources_task(
                 s.selected_sources
                     .retain(|value| available_sources.iter().any(|source| source == value));
                 if s.selected_sources.is_empty() {
-                    if s.sources.iter().any(|source| source.value == DEFAULT_SOURCE_VALUE) {
-                        s.selected_sources.push(DEFAULT_SOURCE_VALUE.to_string());
-                    } else if let Some(source) = s.sources.first() {
-                        s.selected_sources.push(source.value.clone());
+                    let fallback_source = if s
+                        .sources
+                        .iter()
+                        .any(|source| source.value == DEFAULT_SOURCE_VALUE)
+                    {
+                        Some(DEFAULT_SOURCE_VALUE.to_string())
+                    } else {
+                        s.sources.first().map(|source| source.value.clone())
+                    };
+
+                    if let Some(source) = fallback_source {
+                        s.selected_sources.push(source);
                     }
                 }
 
                 if !s.sources.iter().any(|source| source.value == s.rune_source) {
-                    s.rune_source = s
+                    let fallback_rune_source = s
                         .selected_sources
                         .first()
                         .cloned()
                         .or_else(|| s.sources.first().map(|source| source.value.clone()))
                         .unwrap_or_else(|| DEFAULT_SOURCE_VALUE.to_string());
+                    s.rune_source = fallback_rune_source;
                 }
 
                 (
