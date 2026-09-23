@@ -631,7 +631,7 @@ async fn lcu_monitor_task(
                     }
                 });
 
-                tokio::time::sleep(Duration::from_millis(1200)).await;
+                tokio::time::sleep(Duration::from_millis(3200)).await;
                 continue;
             }
 
