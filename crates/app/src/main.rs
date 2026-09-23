@@ -16,6 +16,7 @@ use lcu::{
     builds::Rune,
     cmd::{get_cmd_output, get_lcu_process_id},
     lcu_api::{self, make_sub_msg},
+    mayhem,
     reqwest_websocket::Message,
     serde_json::{from_str, Value},
     source::SourceItem,
@@ -41,6 +42,7 @@ struct AppState {
     sources: Vec<SourceItem>,
     selected_sources: Vec<String>,
     rune_source: String,
+    hextech_overlay: bool,
     current_champion_id: i64,
     /// Runes for the currently displayed champion, kept so we can index into them.
     current_runes: Vec<Rune>,
@@ -56,6 +58,7 @@ impl Default for AppState {
             sources: Vec::new(),
             selected_sources: vec![DEFAULT_SOURCE_VALUE.to_string()],
             rune_source: DEFAULT_SOURCE_VALUE.to_string(),
+            hextech_overlay: true,
             current_champion_id: 0,
             current_runes: Vec::new(),
         }
@@ -121,6 +124,7 @@ fn settings_snapshot(state: &AppState) -> Settings {
     Settings {
         selected_sources: state.selected_sources.clone(),
         rune_source: state.rune_source.clone(),
+        hextech_overlay: state.hextech_overlay,
     }
 }
 
@@ -134,6 +138,7 @@ fn main() {
     // -- Create windows --
     let sources_window = SourcesWindow::new().unwrap();
     let runes_window = RunesWindow::new().unwrap();
+    let hextech_window = HextechWindow::new().unwrap();
 
     let saved_settings = Settings::load();
     let mut initial_state = AppState::default();
@@ -143,6 +148,8 @@ fn main() {
     if !saved_settings.rune_source.is_empty() {
         initial_state.rune_source = saved_settings.rune_source;
     }
+    initial_state.hextech_overlay = saved_settings.hextech_overlay;
+    sources_window.set_hextech_overlay_enabled(initial_state.hextech_overlay);
     let state: SharedState = Arc::new(Mutex::new(initial_state));
 
     // -- Apply Builds button --
