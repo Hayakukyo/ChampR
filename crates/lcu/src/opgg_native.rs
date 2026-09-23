@@ -28,13 +28,14 @@ pub async fn source_metadata(source: &str) -> anyhow::Result<(String, String)> {
         .await
         .context("fetch OP.GG source metadata")?;
 
-    let updated_at = response
-        .meta
+    let meta = response.meta;
+    let version = meta.version.clone();
+    let updated_at = meta
         .analyzed_at
-        .or(response.meta.cached_at)
+        .or(meta.cached_at)
         .unwrap_or_default();
 
-    Ok((response.meta.version, updated_at))
+    Ok((version, updated_at))
 }
 
 pub async fn fetch_builds(
