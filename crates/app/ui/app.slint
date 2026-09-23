@@ -1,4 +1,12 @@
-import { VerticalBox, HorizontalBox, ListView, Button } from "std-widgets.slint";
+import { VerticalBox, HorizontalBox, ListView, Button, CheckBox, ComboBox } from "std-widgets.slint";
+
+export struct SourceModel {
+    index: int,
+    label: string,
+    value: string,
+    mode: string,
+    selected: bool,
+}
 
 export struct RuneModel {
     /// Display index (for identification in callbacks)
@@ -17,24 +25,28 @@ export struct RuneModel {
 
 export component SourcesWindow inherits Window {
     title: "ChampR";
-    preferred-width: 500px;
-    preferred-height: 640px;
+    preferred-width: 520px;
+    preferred-height: 700px;
 
     // --- properties ---
     in-out property <string> status: "loading";          // "loading" | "success" | "error"
     in-out property <string> lcu-status: "disconnected"; // "disconnected" | "authorizing" | "needs-admin" | "connected"
     in-out property <string> lcu-summoner: "";
     in-out property <bool> applying-builds: false;
-    in-out property <string> apply-status: "";           // "", "Applying…", "Done! (N champions)", "Error: …"
+    in-out property <string> apply-status: "";
+    in-out property <[SourceModel]> sources;
+    in-out property <bool> has-selected-sources: false;
 
     // --- callbacks ---
     callback apply-builds-clicked();
+    callback source-toggled(int, bool);
+    callback select-all-sources();
+    callback clear-sources();
 
     VerticalBox {
         padding: 16px;
         spacing: 12px;
 
-        // Header
         Text {
             text: "ChampR";
             font-size: 28px;
@@ -48,7 +60,6 @@ export component SourcesWindow inherits Window {
             color: #888888;
         }
 
-        // LCU connection status bar
         HorizontalBox {
             spacing: 8px;
             alignment: center;
@@ -79,17 +90,10 @@ export component SourcesWindow inherits Window {
             }
         }
 
-        Text {
-            text: "Source: OP.GG";
-            font-size: 14px;
-            horizontal-alignment: center;
-            color: #666666;
-        }
-
         if root.status == "loading" : HorizontalBox {
             alignment: center;
             Text {
-                text: "Loading champion data…";
+                text: "Loading champion and source data…";
                 font-size: 14px;
                 color: #888888;
             }
@@ -102,18 +106,79 @@ export component SourcesWindow inherits Window {
             color: #cc3333;
         }
 
-        // Apply Builds button + status
+        if root.status == "success" : VerticalBox {
+            spacing: 8px;
+
+            HorizontalBox {
+                spacing: 8px;
+                Text {
+                    text: "Build sources";
+                    font-size: 16px;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                }
+                Rectangle { horizontal-stretch: 1; }
+                Button {
+                    text: "All";
+                    clicked => { root.select-all-sources(); }
+                }
+                Button {
+                    text: "Clear";
+                    clicked => { root.clear-sources(); }
+                }
+            }
+
+            ListView {
+                height: 290px;
+                for source[index] in root.sources : Rectangle {
+                    height: 42px;
+                    border-width: 1px;
+                    border-color: #eeeeee;
+                    border-radius: 5px;
+                    background: #fafafa;
+
+                    HorizontalBox {
+                        padding: 7px;
+                        spacing: 8px;
+                        CheckBox {
+                            text: source.label;
+                            checked: source.selected;
+                            toggled => {
+                                root.source-toggled(source.index, self.checked);
+                            }
+                        }
+                        Rectangle { horizontal-stretch: 1; }
+                        Text {
+                            text: source.mode;
+                            font-size: 11px;
+                            color: #999999;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+        }
+
         HorizontalBox {
             alignment: center;
             spacing: 12px;
 
             Button {
                 text: root.applying-builds ? "Applying…" : "Apply Builds";
-                enabled: !root.applying-builds && root.lcu-status == "connected";
+                enabled: !root.applying-builds
+                    && root.lcu-status == "connected"
+                    && root.has-selected-sources;
                 clicked => {
                     root.apply-builds-clicked();
                 }
             }
+        }
+
+        if !root.has-selected-sources && root.status == "success" : Text {
+            text: "Select at least one source.";
+            font-size: 12px;
+            horizontal-alignment: center;
+            color: #999999;
         }
 
         if root.apply-status != "" : Text {
@@ -132,7 +197,7 @@ export component SourcesWindow inherits Window {
 export component RunesWindow inherits Window {
     title: "Runes";
     preferred-width: 500px;
-    preferred-height: 640px;
+    preferred-height: 660px;
 
     // --- properties ---
     in-out property <int> champion-id: 0;
@@ -140,18 +205,20 @@ export component RunesWindow inherits Window {
     in-out property <image> champion-avatar;
     in-out property <bool> has-champion: false;
     in-out property <[RuneModel]> runes;
-    in-out property <string> rune-status: "";  // "" | "loading" | "error" | "success"
+    in-out property <string> rune-status: "";
     in-out property <string> apply-rune-status: "";
+    in-out property <[string]> rune-source-labels;
+    in-out property <string> rune-source-label: "";
 
     // --- callbacks ---
     callback close-requested();
     callback apply-rune-clicked(int);
+    callback rune-source-selected(string);
 
     VerticalBox {
         padding: 16px;
         spacing: 12px;
 
-        // Champion header
         if root.has-champion : HorizontalBox {
             spacing: 12px;
             alignment: center;
@@ -177,18 +244,19 @@ export component RunesWindow inherits Window {
             alignment: center;
 
             Text {
-                text: "Source:";
+                text: "Rune source:";
                 font-size: 14px;
                 vertical-alignment: center;
             }
-            Text {
-                text: "OP.GG";
-                font-size: 14px;
-                color: #666666;
+            ComboBox {
+                model: root.rune-source-labels;
+                current-value <=> root.rune-source-label;
+                selected(value) => {
+                    root.rune-source-selected(value);
+                }
             }
         }
 
-        // Rune list
         if root.rune-status == "loading" : Text {
             text: "Loading runes…";
             font-size: 14px;
@@ -197,7 +265,7 @@ export component RunesWindow inherits Window {
         }
 
         if root.rune-status == "error" : Text {
-            text: "Failed to load runes for this champion.";
+            text: "Failed to load runes for this champion/source.";
             font-size: 14px;
             horizontal-alignment: center;
             color: #cc3333;
@@ -261,7 +329,6 @@ export component RunesWindow inherits Window {
             }
         }
 
-        // Apply rune feedback
         if root.apply-rune-status != "" : Text {
             text: root.apply-rune-status;
             font-size: 13px;
@@ -269,7 +336,6 @@ export component RunesWindow inherits Window {
             color: #666666;
         }
 
-        // Close
         HorizontalBox {
             alignment: center;
             Button {
