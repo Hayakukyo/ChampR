@@ -4,7 +4,6 @@ use anyhow::{anyhow, Context};
 use regex::Regex;
 use reqwest::header::{ACCEPT_LANGUAGE, USER_AGENT};
 use serde::Deserialize;
-use serde_json::Value;
 
 #[derive(Debug, Clone)]
 pub struct AugmentRecommendation {
