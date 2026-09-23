@@ -23,6 +23,9 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Test Mayhem parser
+        run: cargo test -p lcu mayhem::tests
+
       - name: Build release EXE
         run: cargo build -p champr --release
 
@@ -39,6 +42,7 @@ jobs:
           2. Run ChampR.exe.
           3. Approve the one-time administrator prompt used to read LCU credentials.
           4. Choose data sources, import builds, and select a rune source in champion select.
+          5. Leave "Hextech Overlay" enabled to show champion-specific ARAM Mayhem augment recommendations in an always-on-top window.
 
           This fork retains the original project's LGPL-2.1 license.
           "@ | Set-Content -Encoding UTF8 dist\README.txt
