@@ -125,6 +125,8 @@ pub async fn fetch_augments(
             })
             .unwrap_or_else(|| "Silver".to_string());
 
+        let description = compact_description(&page.description, &name);
+
         items.push(AugmentRecommendation {
             id: stat.id,
             name,
@@ -132,7 +134,7 @@ pub async fn fetch_augments(
             rarity,
             popularity: stat.popular,
             performance: stat.performance,
-            description: compact_description(&page.description, &name),
+            description,
         });
     }
 
