@@ -36,10 +36,10 @@ export struct AugmentModel {
 
 export component SourcesWindow inherits Window {
     title: "ChampR - Builds, Runes, All in One. v2.0.2-b8";
-    preferred-width: 760px;
-    preferred-height: 540px;
-    min-width: 700px;
-    min-height: 500px;
+    preferred-width: 820px;
+    preferred-height: 560px;
+    min-width: 760px;
+    min-height: 520px;
 
     in-out property <string> status: "loading";
     in-out property <string> lcu-status: "disconnected";
@@ -69,7 +69,7 @@ export component SourcesWindow inherits Window {
 
             // Left side: classic "Sources of Builds" section
             VerticalBox {
-                horizontal-stretch: 3;
+                horizontal-stretch: 4;
                 spacing: 8px;
 
                 HorizontalBox {
@@ -123,57 +123,59 @@ export component SourcesWindow inherits Window {
                     vertical-stretch: 1;
 
                     for source[index] in root.sources : Rectangle {
-                        height: 66px;
+                        height: 78px;
                         border-width: 1px;
                         border-color: #e2e2e2;
                         border-radius: 5px;
                         background: source.selected ? #f7f9fb : #ffffff;
 
-                        HorizontalBox {
+                        VerticalBox {
                             padding: 8px;
-                            spacing: 10px;
+                            spacing: 4px;
 
-                            CheckBox {
-                                width: 158px;
-                                text: source.label;
-                                checked: source.selected;
-                                toggled => {
-                                    root.source-toggled(source.index, self.checked);
+                            HorizontalBox {
+                                spacing: 8px;
+
+                                CheckBox {
+                                    text: source.label;
+                                    checked: source.selected;
+                                    horizontal-stretch: 1;
+                                    toggled => {
+                                        root.source-toggled(source.index, self.checked);
+                                    }
+                                }
+
+                                Rectangle {
+                                    width: 48px;
+                                    height: 24px;
+                                    border-radius: 12px;
+                                    background: source.mode == "ARAM" ? #eef5ff : #f1f1f1;
+
+                                    Text {
+                                        text: source.mode;
+                                        font-size: 10px;
+                                        font-weight: 600;
+                                        color: #555555;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
                                 }
                             }
 
-                            VerticalBox {
-                                alignment: center;
-                                spacing: 2px;
-                                horizontal-stretch: 1;
-
+                            HorizontalBox {
+                                spacing: 14px;
                                 Text {
                                     text: source.version;
                                     font-size: 11px;
-                                    color: #666666;
-                                    overflow: elide;
+                                    color: #555555;
+                                    horizontal-stretch: 1;
                                 }
                                 Text {
                                     text: source.updated;
                                     font-size: 11px;
-                                    color: #888888;
-                                    overflow: elide;
-                                }
-                            }
-
-                            Rectangle {
-                                width: 46px;
-                                height: 24px;
-                                border-radius: 12px;
-                                background: source.mode == "ARAM" ? #eef5ff : #f1f1f1;
-
-                                Text {
-                                    text: source.mode;
-                                    font-size: 10px;
-                                    font-weight: 600;
-                                    color: #555555;
-                                    horizontal-alignment: center;
-                                    vertical-alignment: center;
+                                    color: #777777;
+                                    horizontal-stretch: 1;
+                                    horizontal-alignment: right;
                                 }
                             }
                         }
@@ -188,7 +190,7 @@ export component SourcesWindow inherits Window {
 
             // Right side: rune source + client state, like the old layout
             VerticalBox {
-                horizontal-stretch: 2;
+                horizontal-stretch: 3;
                 spacing: 10px;
 
                 Text {
