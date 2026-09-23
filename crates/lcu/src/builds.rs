@@ -182,8 +182,6 @@ pub async fn batch_apply(
     is_tencent: bool,
     logs: Arc<Mutex<Vec<LogItem>>>,
 ) -> Result<(), ()> {
-    let mut tasks = vec![];
-
     let folder = if is_tencent {
         format!("{dir}/Game/Config/Champions")
     } else {
@@ -191,28 +189,44 @@ pub async fn batch_apply(
     };
     if Path::new(&folder).exists() {
         let _ = fs::remove_dir_all(&folder);
-    } else {
-        let _ = fs::create_dir_all(&folder);
     }
+    let _ = fs::create_dir_all(&folder);
 
-    for (champion, _) in champions_map.iter() {
-        for source in selected_sources.iter() {
-            let source = source.clone();
-            let logs = logs.clone();
-            let config_folder = folder.clone();
+    // New ChampR data can be served by the API, while classic sources still
+    // live as @champ-r/* packages. Prefer the live API when the source is
+    // advertised there and fall back to the legacy package feed otherwise.
+    let live_source_keys = web::fetch_sources()
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .map(|item| item.value)
+        .collect::<Vec<_>>();
 
-            let task = async move {
-                info!("[apply_builds] started {:?} {:?}", &source, &champion);
-                let r = fetch_and_apply(&config_folder, &source, champion).await;
-                if r.is_ok() {
-                    let mut logs = logs.lock().unwrap();
-                    logs.push((source.clone(), champion.clone()));
-                    drop(logs);
-                } else {
-                    info!("[apply_builds] failed {:?} {:?}", &source, &champion);
-                }
-            };
-            tasks.push(task);
+    let mut tasks = vec![];
+    let mut package_sources = Vec::new();
+
+    for source in selected_sources {
+        if live_source_keys.iter().any(|key| key == &source) {
+            for champion in champions_map.keys() {
+                let source = source.clone();
+                let champion = champion.clone();
+                let logs = logs.clone();
+                let config_folder = folder.clone();
+
+                let task = async move {
+                    info!("[apply_builds] started {:?} {:?}", &source, &champion);
+                    let r = fetch_and_apply(&config_folder, &source, &champion).await;
+                    if r.is_ok() {
+                        let mut logs = logs.lock().unwrap();
+                        logs.push((source.clone(), champion.clone()));
+                    } else {
+                        info!("[apply_builds] failed {:?} {:?}", &source, &champion);
+                    }
+                };
+                tasks.push(task);
+            }
+        } else {
+            package_sources.push(source);
         }
     }
 
@@ -220,6 +234,19 @@ pub async fn batch_apply(
         .buffer_unordered(10)
         .collect::<Vec<()>>()
         .await;
+
+    for source in package_sources {
+        info!("[apply_builds] package fallback started {:?}", &source);
+        match web::download_tar_and_apply_for_source(&source, Some(dir.clone()), is_tencent).await {
+            Ok(()) => {
+                let mut logs = logs.lock().unwrap();
+                logs.push((source.clone(), "package".to_string()));
+            }
+            Err(err) => {
+                info!("[apply_builds] package fallback failed {:?}: {:?}", &source, err);
+            }
+        }
+    }
 
     Ok(())
 }
