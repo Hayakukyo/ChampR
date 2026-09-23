@@ -215,7 +215,7 @@ async fn fetch_latest_data_dragon_version() -> Result<String, FetchError> {
 }
 
 async fn fetch_champion_list_for_version(version: &str) -> Result<ChampionsMap, FetchError> {
-    let url = format!("{DATA_DRAGON_BASE_URL}/cdn/{version}/data/en_US/champion.json");
+    let url = format!("{DATA_DRAGON_BASE_URL}/cdn/{version}/data/zh_CN/champion.json");
     if let Ok(resp) = reqwest::get(url).await {
         if let Ok(data) = resp.json::<ChampionListResponse>().await {
             return Ok(data.data);
