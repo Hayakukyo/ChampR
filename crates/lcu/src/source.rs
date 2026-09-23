@@ -24,11 +24,11 @@ impl SourceItem {
     }
 }
 
-/// Sources that existed in the classic ChampR UI/package feed.
+/// Classic ChampR package-backed sources.
 ///
-/// The live service source list is merged with this catalog at runtime, so
-/// current server-provided sources win while older package-backed sources
-/// remain available when the service no longer advertises them.
+/// These are merged with the live service source list at runtime. Live
+/// service entries override labels for duplicate keys, while the classic
+/// package sources stay available for the old multi-source workflow.
 pub fn builtin_sources() -> Vec<SourceItem> {
     vec![
         SourceItem {
@@ -40,18 +40,6 @@ pub fn builtin_sources() -> Vec<SourceItem> {
         SourceItem {
             label: "OP.GG ARAM".to_string(),
             value: "op.gg-aram".to_string(),
-            is_aram: Some(true),
-            is_urf: Some(false),
-        },
-        SourceItem {
-            label: "U.GG".to_string(),
-            value: "u.gg".to_string(),
-            is_aram: Some(false),
-            is_urf: Some(false),
-        },
-        SourceItem {
-            label: "U.GG ARAM".to_string(),
-            value: "u.gg-aram".to_string(),
             is_aram: Some(true),
             is_urf: Some(false),
         },
