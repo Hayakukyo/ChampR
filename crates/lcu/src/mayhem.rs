@@ -133,7 +133,7 @@ fn parse_augments(raw: &str) -> anyhow::Result<Vec<AugmentRecommendation>> {
 }
 
 fn decode_json_fragment(value: &str) -> String {
-    let wrapped = format!("\\\"{value}\\\"");
+    let wrapped = format!("\"{value}\"");
     serde_json::from_str::<String>(&wrapped).unwrap_or_else(|_| value.to_string())
 }
 
