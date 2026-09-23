@@ -1,7 +1,16 @@
-import { VerticalBox, HorizontalBox, ListView, Button } from "std-widgets.slint";
+import { VerticalBox, HorizontalBox, ListView, Button, CheckBox, ComboBox } from "std-widgets.slint";
+
+export struct SourceModel {
+    index: int,
+    label: string,
+    value: string,
+    mode: string,
+    version: string,
+    updated: string,
+    selected: bool,
+}
 
 export struct RuneModel {
-    /// Display index (for identification in callbacks)
     index: int,
     name: string,
     position: string,
@@ -11,147 +20,341 @@ export struct RuneModel {
     sub-style-id: int,
 }
 
+export struct AugmentModel {
+    rank: int,
+    name: string,
+    rarity: string,
+    tier: string,
+    popular: string,
+    performance: string,
+    description: string,
+}
+
 // ---------------------------------------------------------------------------
-//  SourcesWindow – source selection, Apply Builds, LCU status
+//  Main window – restored classic two-column ChampR layout
 // ---------------------------------------------------------------------------
 
 export component SourcesWindow inherits Window {
-    title: "ChampR";
-    preferred-width: 500px;
-    preferred-height: 640px;
+    title: "ChampR - Builds, Runes, All in One. v2.0.2-b8";
+    preferred-width: 820px;
+    preferred-height: 560px;
+    min-width: 760px;
+    min-height: 520px;
 
-    // --- properties ---
-    in-out property <string> status: "loading";          // "loading" | "success" | "error"
-    in-out property <string> lcu-status: "disconnected"; // "disconnected" | "authorizing" | "needs-admin" | "connected"
+    in-out property <string> status: "loading";
+    in-out property <string> lcu-status: "disconnected";
     in-out property <string> lcu-summoner: "";
     in-out property <bool> applying-builds: false;
-    in-out property <string> apply-status: "";           // "", "Applying…", "Done! (N champions)", "Error: …"
+    in-out property <string> apply-status: "";
+    in-out property <[SourceModel]> sources;
+    in-out property <bool> has-selected-sources: false;
+    in-out property <[string]> rune-source-labels;
+    in-out property <string> rune-source-label: "";
+    in-out property <bool> hextech-overlay-enabled: true;
 
-    // --- callbacks ---
     callback apply-builds-clicked();
+    callback source-toggled(int, bool);
+    callback select-all-sources();
+    callback clear-sources();
+    callback rune-source-selected(string);
+    callback hextech-overlay-toggled(bool);
 
     VerticalBox {
         padding: 16px;
         spacing: 12px;
 
-        // Header
-        Text {
-            text: "ChampR";
-            font-size: 28px;
-            font-weight: 700;
-            horizontal-alignment: center;
-        }
-        Text {
-            text: "Builds, runes, all in one";
-            font-size: 13px;
-            horizontal-alignment: center;
-            color: #888888;
-        }
-
-        // LCU connection status bar
         HorizontalBox {
-            spacing: 8px;
-            alignment: center;
+            spacing: 18px;
+            vertical-stretch: 1;
+
+            // Left side: classic "Sources of Builds" section
+            VerticalBox {
+                horizontal-stretch: 4;
+                spacing: 8px;
+
+                HorizontalBox {
+                    Text {
+                        text: "Sources of Builds";
+                        font-size: 20px;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    Button {
+                        text: "All";
+                        enabled: root.status == "success";
+                        clicked => { root.select-all-sources(); }
+                    }
+                    Button {
+                        text: "Clear";
+                        enabled: root.status == "success";
+                        clicked => { root.clear-sources(); }
+                    }
+                }
+
+                Rectangle {
+                    height: 1px;
+                    background: #dddddd;
+                }
+
+                if root.status == "loading" : Rectangle {
+                    vertical-stretch: 1;
+                    Text {
+                        text: "Loading source information…";
+                        font-size: 14px;
+                        color: #777777;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+
+                if root.status == "error" : Rectangle {
+                    vertical-stretch: 1;
+                    Text {
+                        text: "Failed to load source data.";
+                        font-size: 14px;
+                        color: #bb3333;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+
+                if root.status == "success" : ListView {
+                    vertical-stretch: 1;
+
+                    for source[index] in root.sources : Rectangle {
+                        height: 78px;
+                        border-width: 1px;
+                        border-color: #e2e2e2;
+                        border-radius: 5px;
+                        background: source.selected ? #f7f9fb : #ffffff;
+
+                        VerticalBox {
+                            padding: 8px;
+                            spacing: 4px;
+
+                            HorizontalBox {
+                                spacing: 8px;
+
+                                CheckBox {
+                                    text: source.label;
+                                    checked: source.selected;
+                                    horizontal-stretch: 1;
+                                    toggled => {
+                                        root.source-toggled(source.index, self.checked);
+                                    }
+                                }
+
+                                Rectangle {
+                                    width: 48px;
+                                    height: 24px;
+                                    border-radius: 12px;
+                                    background: source.mode == "ARAM" ? #eef5ff : #f1f1f1;
+
+                                    Text {
+                                        text: source.mode;
+                                        font-size: 10px;
+                                        font-weight: 600;
+                                        color: #555555;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+
+                            HorizontalBox {
+                                spacing: 14px;
+                                Text {
+                                    text: source.version;
+                                    font-size: 11px;
+                                    color: #555555;
+                                    horizontal-stretch: 1;
+                                }
+                                Text {
+                                    text: source.updated;
+                                    font-size: 11px;
+                                    color: #777777;
+                                    horizontal-stretch: 1;
+                                    horizontal-alignment: right;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
 
             Rectangle {
-                width: 10px;
-                height: 10px;
-                border-radius: 5px;
-                background: root.lcu-status == "connected" ? #22cc44 : #cc3333;
+                width: 1px;
+                background: #dddddd;
             }
-            Text {
-                text: root.lcu-status == "connected"
-                    ? "League Client: " + root.lcu-summoner
-                    : root.lcu-status == "authorizing"
-                    ? "League Client detected. Requesting admin access..."
-                    : root.lcu-status == "needs-admin"
-                    ? "League Client detected. Admin access is required once to read LCU credentials."
-                    : "League Client not detected";
-                font-size: 13px;
-                color: root.lcu-status == "connected"
-                    ? #22cc44
-                    : root.lcu-status == "authorizing"
-                    ? #cc9a22
-                    : root.lcu-status == "needs-admin"
-                    ? #cc9a22
-                    : #cc3333;
-                vertical-alignment: center;
+
+            // Right side: rune source + client state, like the old layout
+            VerticalBox {
+                horizontal-stretch: 3;
+                spacing: 10px;
+
+                Text {
+                    text: "Rune Source";
+                    font-size: 20px;
+                    font-weight: 600;
+                }
+
+                ComboBox {
+                    model: root.rune-source-labels;
+                    current-value <=> root.rune-source-label;
+                    enabled: root.status == "success";
+                    selected(value) => {
+                        root.rune-source-selected(value);
+                    }
+                }
+
+                Text {
+                    text: "This source is used for the rune recommendations shown during champion select.";
+                    font-size: 12px;
+                    color: #777777;
+                    wrap: word-wrap;
+                }
+
+                CheckBox {
+                    text: "Hextech Overlay";
+                    checked: root.hextech-overlay-enabled;
+                    toggled => {
+                        root.hextech-overlay-toggled(self.checked);
+                    }
+                }
+
+                Text {
+                    text: "Always-on-top ARAM Mayhem augment recommendations for the champion you picked.";
+                    font-size: 11px;
+                    color: #888888;
+                    wrap: word-wrap;
+                }
+
+                Rectangle {
+                    height: 1px;
+                    background: #dddddd;
+                }
+
+                Text {
+                    text: "League Client";
+                    font-size: 15px;
+                    font-weight: 600;
+                }
+
+                HorizontalBox {
+                    spacing: 8px;
+
+                    Rectangle {
+                        width: 10px;
+                        height: 10px;
+                        border-radius: 5px;
+                        background: root.lcu-status == "connected" || root.lcu-status == "in-game"
+                            ? #24b34b
+                            : root.lcu-status == "authorizing" || root.lcu-status == "needs-admin"
+                            ? #d39a23
+                            : #c63d3d;
+                    }
+
+                    Text {
+                        text: root.lcu-status == "connected" || root.lcu-status == "in-game"
+                            ? root.lcu-summoner
+                            : root.lcu-status == "authorizing"
+                            ? "Requesting administrator access…"
+                            : root.lcu-status == "needs-admin"
+                            ? "Administrator access required"
+                            : "Disconnected";
+                        font-size: 12px;
+                        color: #555555;
+                        wrap: word-wrap;
+                        vertical-alignment: center;
+                    }
+                }
+
+                Rectangle { vertical-stretch: 1; }
+
+                Text {
+                    text: "Build data is written to the League Recommended item-set folder.";
+                    font-size: 11px;
+                    color: #999999;
+                    wrap: word-wrap;
+                }
             }
         }
 
-        Text {
-            text: "Source: OP.GG";
-            font-size: 14px;
-            horizontal-alignment: center;
-            color: #666666;
+        Rectangle {
+            height: 1px;
+            background: #dddddd;
         }
 
-        if root.status == "loading" : HorizontalBox {
-            alignment: center;
-            Text {
-                text: "Loading champion data…";
-                font-size: 14px;
-                color: #888888;
-            }
-        }
-
-        if root.status == "error" : Text {
-            text: "Failed to load champion data. Check your network.";
-            font-size: 14px;
-            horizontal-alignment: center;
-            color: #cc3333;
-        }
-
-        // Apply Builds button + status
         HorizontalBox {
-            alignment: center;
             spacing: 12px;
 
+            VerticalBox {
+                horizontal-stretch: 1;
+                alignment: center;
+
+                Text {
+                    text: root.apply-status != ""
+                        ? root.apply-status
+                        : root.status == "loading"
+                        ? "Loading…"
+                        : root.lcu-status == "connected"
+                        ? "Connected to League of Legends."
+                        : "Disconnected.";
+                    font-size: 12px;
+                    color: root.apply-status != "" ? #555555 : #777777;
+                    overflow: elide;
+                }
+
+                if !root.has-selected-sources && root.status == "success" : Text {
+                    text: "Select at least one build source.";
+                    font-size: 11px;
+                    color: #b06b21;
+                }
+            }
+
             Button {
+                width: 128px;
                 text: root.applying-builds ? "Applying…" : "Apply Builds";
-                enabled: !root.applying-builds && root.lcu-status == "connected";
+                enabled: !root.applying-builds
+                    && root.lcu-status == "connected"
+                    && root.has-selected-sources
+                    && root.status == "success";
                 clicked => {
                     root.apply-builds-clicked();
                 }
             }
         }
-
-        if root.apply-status != "" : Text {
-            text: root.apply-status;
-            font-size: 13px;
-            horizontal-alignment: center;
-            color: #666666;
-        }
     }
 }
 
 // ---------------------------------------------------------------------------
-//  RunesWindow – champion runes overlay with source picker + apply buttons
+//  Champion-select rune window
 // ---------------------------------------------------------------------------
 
 export component RunesWindow inherits Window {
-    title: "Runes";
+    title: "ChampR - Runes";
     preferred-width: 500px;
-    preferred-height: 640px;
+    preferred-height: 660px;
 
-    // --- properties ---
     in-out property <int> champion-id: 0;
     in-out property <string> champion-name: "";
     in-out property <image> champion-avatar;
     in-out property <bool> has-champion: false;
     in-out property <[RuneModel]> runes;
-    in-out property <string> rune-status: "";  // "" | "loading" | "error" | "success"
+    in-out property <string> rune-status: "";
     in-out property <string> apply-rune-status: "";
+    in-out property <[string]> rune-source-labels;
+    in-out property <string> rune-source-label: "";
 
-    // --- callbacks ---
     callback close-requested();
     callback apply-rune-clicked(int);
+    callback rune-source-selected(string);
 
     VerticalBox {
         padding: 16px;
         spacing: 12px;
 
-        // Champion header
         if root.has-champion : HorizontalBox {
             spacing: 12px;
             alignment: center;
@@ -177,18 +380,19 @@ export component RunesWindow inherits Window {
             alignment: center;
 
             Text {
-                text: "Source:";
+                text: "Rune source:";
                 font-size: 14px;
                 vertical-alignment: center;
             }
-            Text {
-                text: "OP.GG";
-                font-size: 14px;
-                color: #666666;
+            ComboBox {
+                model: root.rune-source-labels;
+                current-value <=> root.rune-source-label;
+                selected(value) => {
+                    root.rune-source-selected(value);
+                }
             }
         }
 
-        // Rune list
         if root.rune-status == "loading" : Text {
             text: "Loading runes…";
             font-size: 14px;
@@ -197,7 +401,7 @@ export component RunesWindow inherits Window {
         }
 
         if root.rune-status == "error" : Text {
-            text: "Failed to load runes for this champion.";
+            text: "Failed to load runes for this champion/source.";
             font-size: 14px;
             horizontal-alignment: center;
             color: #cc3333;
@@ -261,7 +465,6 @@ export component RunesWindow inherits Window {
             }
         }
 
-        // Apply rune feedback
         if root.apply-rune-status != "" : Text {
             text: root.apply-rune-status;
             font-size: 13px;
@@ -269,13 +472,206 @@ export component RunesWindow inherits Window {
             color: #666666;
         }
 
-        // Close
         HorizontalBox {
             alignment: center;
             Button {
                 text: "Close";
                 clicked => {
                     root.close-requested();
+                }
+            }
+        }
+    }
+}
+
+
+// ---------------------------------------------------------------------------
+//  ARAM Mayhem augment overlay
+// ---------------------------------------------------------------------------
+
+export component HextechWindow inherits Window {
+    title: "ChampR - Hextech Recommendations";
+    width: 340px;
+    height: 390px;
+    always-on-top: true;
+    background: transparent;
+    default-font-family: "Microsoft YaHei UI";
+
+    in-out property <string> champion-name: "";
+    in-out property <string> status: "loading";
+    in-out property <[AugmentModel]> augments;
+    in-out property <string> source-text: "OP.GG ARAM Mayhem";
+
+    callback close-requested();
+
+    Rectangle {
+        border-radius: 10px;
+        background: #111722c8;
+        border-width: 1px;
+        border-color: #ffffff24;
+
+        VerticalBox {
+            padding: 10px;
+            spacing: 6px;
+
+            HorizontalBox {
+                spacing: 6px;
+
+                VerticalBox {
+                    horizontal-stretch: 1;
+                    spacing: 1px;
+
+                    Text {
+                        text: root.champion-name != ""
+                            ? root.champion-name + " · 海克斯推荐"
+                            : "海克斯推荐";
+                        font-size: 15px;
+                        font-weight: 700;
+                        color: #ffffff;
+                        overflow: elide;
+                    }
+
+                    Text {
+                        text: root.source-text;
+                        font-size: 9px;
+                        color: #aab2c0;
+                    }
+                }
+
+                Rectangle {
+                    width: 30px;
+                    height: 24px;
+                    border-radius: 5px;
+                    background: #ffffff16;
+
+                    Text {
+                        text: "×";
+                        font-size: 15px;
+                        color: #d8dde6;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+
+                    TouchArea {
+                        clicked => { root.close-requested(); }
+                    }
+                }
+            }
+
+            Rectangle {
+                height: 1px;
+                background: #ffffff20;
+            }
+
+            if root.status == "loading" : Rectangle {
+                vertical-stretch: 1;
+                Text {
+                    text: "正在读取海克斯推荐…";
+                    font-size: 11px;
+                    color: #c7ccd5;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+
+            if root.status == "error" : Rectangle {
+                vertical-stretch: 1;
+                Text {
+                    text: "没有读取到这个英雄的海克斯数据";
+                    font-size: 11px;
+                    color: #ffb4b4;
+                    wrap: word-wrap;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+
+            if root.status == "success" : ListView {
+                vertical-stretch: 1;
+
+                for augment[index] in root.augments : Rectangle {
+                    height: 51px;
+                    border-radius: 6px;
+                    background: #ffffff0e;
+
+                    HorizontalBox {
+                        padding: 5px;
+                        spacing: 6px;
+
+                        Rectangle {
+                            width: 23px;
+                            height: 23px;
+                            border-radius: 12px;
+                            background: augment.rarity == "Prismatic"
+                                ? #8f73d9cc
+                                : augment.rarity == "Gold"
+                                ? #c99535cc
+                                : #7d8795aa;
+
+                            Text {
+                                text: "" + augment.rank;
+                                font-size: 10px;
+                                font-weight: 700;
+                                color: #ffffff;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        VerticalBox {
+                            horizontal-stretch: 1;
+                            spacing: 1px;
+
+                            HorizontalBox {
+                                spacing: 5px;
+
+                                Text {
+                                    text: augment.name;
+                                    font-size: 11px;
+                                    font-weight: 700;
+                                    color: #ffffff;
+                                    overflow: elide;
+                                    horizontal-stretch: 1;
+                                }
+
+                                Text {
+                                    text: augment.tier;
+                                    font-size: 9px;
+                                    font-weight: 600;
+                                    color: #e7cf91;
+                                }
+                            }
+
+                            Text {
+                                width: 252px;
+                                text: augment.description;
+                                font-size: 9px;
+                                color: #c3c9d2;
+                                overflow: elide;
+                            }
+
+                            HorizontalBox {
+                                width: 252px;
+                                spacing: 7px;
+
+                                Text {
+                                    text: augment.rarity;
+                                    font-size: 8px;
+                                    color: #9fa8b5;
+                                }
+                                Text {
+                                    text: augment.popular;
+                                    font-size: 8px;
+                                    color: #9fa8b5;
+                                }
+                                Text {
+                                    text: augment.performance;
+                                    font-size: 8px;
+                                    color: #9fa8b5;
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

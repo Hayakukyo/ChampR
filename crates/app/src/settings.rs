@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(dead_code)]
 pub struct Settings {
     /// Source identifiers the user has checked (e.g. ["op.gg", "u.gg"])
@@ -11,6 +11,23 @@ pub struct Settings {
     /// Which source to show runes from in the overlay window
     #[serde(default)]
     pub rune_source: String,
+    /// Show the always-on-top ARAM Mayhem augment recommendation window.
+    #[serde(default = "default_true")]
+    pub hextech_overlay: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            selected_sources: Vec::new(),
+            rune_source: String::new(),
+            hextech_overlay: true,
+        }
+    }
 }
 
 fn settings_path() -> PathBuf {

@@ -182,8 +182,6 @@ pub async fn batch_apply(
     is_tencent: bool,
     logs: Arc<Mutex<Vec<LogItem>>>,
 ) -> Result<(), ()> {
-    let mut tasks = vec![];
-
     let folder = if is_tencent {
         format!("{dir}/Game/Config/Champions")
     } else {
@@ -191,28 +189,56 @@ pub async fn batch_apply(
     };
     if Path::new(&folder).exists() {
         let _ = fs::remove_dir_all(&folder);
-    } else {
-        let _ = fs::create_dir_all(&folder);
     }
+    let _ = fs::create_dir_all(&folder);
 
-    for (champion, _) in champions_map.iter() {
-        for source in selected_sources.iter() {
-            let source = source.clone();
-            let logs = logs.clone();
-            let config_folder = folder.clone();
+    // Current OP.GG sources are fetched directly from OP.GG. Older ChampR
+    // sources remain available through their historical @champ-r/* packages.
+    let mut tasks = vec![];
+    let mut package_sources = Vec::new();
 
-            let task = async move {
-                info!("[apply_builds] started {:?} {:?}", &source, &champion);
-                let r = fetch_and_apply(&config_folder, &source, champion).await;
-                if r.is_ok() {
-                    let mut logs = logs.lock().unwrap();
-                    logs.push((source.clone(), champion.clone()));
-                    drop(logs);
-                } else {
-                    info!("[apply_builds] failed {:?} {:?}", &source, &champion);
-                }
-            };
-            tasks.push(task);
+    for source in selected_sources {
+        if web::source_is_live(&source).await {
+            for (champion, champion_info) in champions_map.iter() {
+                let source = source.clone();
+                let champion = champion.clone();
+                let champion_id = champion_info.key.parse::<i64>().ok();
+                let logs = logs.clone();
+                let target_dir = dir.clone();
+
+                let task = async move {
+                    let Some(champion_id) = champion_id else {
+                        info!("[apply_builds] invalid champion id {:?}", &champion);
+                        return;
+                    };
+
+                    info!("[apply_builds] direct {:?} {:?}", &source, &champion);
+                    match crate::opgg_native::fetch_builds(champion_id, &champion, &source).await {
+                        Ok(sections) => {
+                            apply_builds_from_data(
+                                sections,
+                                &target_dir,
+                                &source,
+                                &champion,
+                                is_tencent,
+                            );
+                            let mut logs = logs.lock().unwrap();
+                            logs.push((source.clone(), champion.clone()));
+                        }
+                        Err(err) => {
+                            info!(
+                                "[apply_builds] direct source failed {:?} {:?}: {:?}",
+                                &source,
+                                &champion,
+                                err
+                            );
+                        }
+                    }
+                };
+                tasks.push(task);
+            }
+        } else {
+            package_sources.push(source);
         }
     }
 
@@ -220,6 +246,19 @@ pub async fn batch_apply(
         .buffer_unordered(10)
         .collect::<Vec<()>>()
         .await;
+
+    for source in package_sources {
+        info!("[apply_builds] package fallback started {:?}", &source);
+        match web::download_tar_and_apply_for_source(&source, Some(dir.clone()), is_tencent).await {
+            Ok(()) => {
+                let mut logs = logs.lock().unwrap();
+                logs.push((source.clone(), "package".to_string()));
+            }
+            Err(err) => {
+                info!("[apply_builds] package fallback failed {:?}: {:?}", &source, err);
+            }
+        }
+    }
 
     Ok(())
 }

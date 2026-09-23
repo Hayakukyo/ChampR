@@ -14,13 +14,17 @@ use kv_log_macro::{error, info, warn};
 use reqwest::header::USER_AGENT;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::BTreeMap;
 use tar::Archive;
 
-use crate::builds::{self, BuildData, ItemBuild};
+use crate::{
+    builds::{self, BuildData, ItemBuild},
+    opgg_native,
+    source::{builtin_sources, SourceItem},
+};
 
 const BUILD_SERVER_URL: &str = env!("CHAMPR_BUILD_SERVER_URL");
 const DATA_DRAGON_BASE_URL: &str = "https://ddragon.leagueoflegends.com";
-const DEFAULT_LOCAL_SERVICE_URL: &str = "http://127.0.0.1:3030";
 const SERVER_URL_ENV_KEY: &str = "CHAMPR_SERVER_URL";
 
 static SERVICE_URL: OnceLock<String> = OnceLock::new();
@@ -69,6 +73,39 @@ pub fn service_url() -> &'static str {
     SERVICE_URL.get_or_init(resolve_service_url).as_str()
 }
 
+pub async fn fetch_sources() -> Result<Vec<SourceItem>, FetchError> {
+    Ok(fetch_sources_with_fallback().await)
+}
+
+pub async fn fetch_sources_with_fallback() -> Vec<SourceItem> {
+    let sources = builtin_sources();
+    let tasks = sources
+        .into_iter()
+        .map(|source| async move { enrich_source_metadata(source).await });
+    join_all(tasks).await
+}
+
+async fn enrich_source_metadata(mut source: SourceItem) -> SourceItem {
+    if opgg_native::is_native_source(&source.value) {
+        if let Ok((version, updated_at)) = opgg_native::source_metadata(&source.value).await {
+            source.version = version;
+            source.updated_at = updated_at;
+        }
+        return source;
+    }
+
+    if let Ok((version, updated_at)) = get_remote_package_metadata(&source.value).await {
+        source.version = version;
+        source.updated_at = updated_at;
+    }
+
+    source
+}
+
+pub async fn source_is_live(source: &str) -> bool {
+    opgg_native::is_native_source(source)
+}
+
 fn resolve_service_url() -> String {
     let runtime_env = std::env::var(SERVER_URL_ENV_KEY).ok();
     let env_file = find_env_file_value(SERVER_URL_ENV_KEY);
@@ -84,19 +121,13 @@ fn resolve_service_url() -> String {
 fn resolve_service_url_from_sources(
     runtime_env: Option<&str>,
     env_file: Option<&str>,
-    use_local_default: bool,
+    _use_local_default: bool,
     build_service_url: &str,
 ) -> String {
     runtime_env
         .and_then(normalize_service_url)
         .or_else(|| env_file.and_then(normalize_service_url))
-        .unwrap_or_else(|| {
-            if use_local_default {
-                DEFAULT_LOCAL_SERVICE_URL.to_string()
-            } else {
-                build_service_url.to_string()
-            }
-        })
+        .unwrap_or_else(|| build_service_url.to_string())
 }
 
 fn find_env_file_value(key: &str) -> Option<String> {
@@ -184,7 +215,7 @@ async fn fetch_latest_data_dragon_version() -> Result<String, FetchError> {
 }
 
 async fn fetch_champion_list_for_version(version: &str) -> Result<ChampionsMap, FetchError> {
-    let url = format!("{DATA_DRAGON_BASE_URL}/cdn/{version}/data/en_US/champion.json");
+    let url = format!("{DATA_DRAGON_BASE_URL}/cdn/{version}/data/zh_CN/champion.json");
     if let Ok(resp) = reqwest::get(url).await {
         if let Ok(data) = resp.json::<ChampionListResponse>().await {
             return Ok(data.data);
@@ -199,13 +230,17 @@ pub async fn fetch_champion_list() -> Result<ChampionsMap, FetchError> {
     fetch_champion_list_for_version(&version).await
 }
 
-pub async fn init_for_ui() -> Result<(ChampionsMap, Vec<DataDragonRune>), FetchError> {
+pub async fn init_for_ui(
+) -> Result<(Vec<SourceItem>, ChampionsMap, Vec<DataDragonRune>), FetchError> {
     let version = fetch_latest_data_dragon_version().await?;
-    try_join(
+    let (champions, runes) = try_join(
         fetch_champion_list_for_version(&version),
         fetch_data_dragon_runes_for_version(&version),
     )
-    .await
+    .await?;
+    let sources = fetch_sources_with_fallback().await;
+
+    Ok((sources, champions, runes))
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -241,22 +276,39 @@ pub async fn list_builds_by_alias(
     source: &String,
     champion: &String,
 ) -> Result<Vec<builds::BuildSection>, FetchError> {
-    let url = format!(
-        "{}/api/source/{source}/champion-alias/{champion}",
-        service_url()
-    );
-    list_builds(&url).await
+    if opgg_native::is_native_source(source) {
+        let champions = fetch_champion_list().await?;
+        let champion_id = champions
+            .values()
+            .find(|item| item.id.eq_ignore_ascii_case(champion))
+            .and_then(|item| item.key.parse::<i64>().ok())
+            .ok_or(FetchError::Failed)?;
+
+        return opgg_native::fetch_builds(champion_id, champion, source)
+            .await
+            .map_err(|err| {
+                warn!("direct OP.GG fetch failed: {:?}", err);
+                FetchError::Failed
+            });
+    }
+
+    Err(FetchError::Failed)
 }
 
 pub async fn list_builds_by_id(
     source: &String,
     champion_id: i64,
 ) -> Result<Vec<builds::BuildSection>, FetchError> {
-    let url = format!(
-        "{}/api/source/{source}/champion-id/{champion_id}",
-        service_url()
-    );
-    list_builds(&url).await
+    if opgg_native::is_native_source(source) {
+        return opgg_native::fetch_builds(champion_id, &champion_id.to_string(), source)
+            .await
+            .map_err(|err| {
+                warn!("direct OP.GG fetch failed: {:?}", err);
+                FetchError::Failed
+            });
+    }
+
+    Err(FetchError::Failed)
 }
 
 pub async fn fetch_champion_runes(
@@ -359,13 +411,53 @@ pub struct Package {
     pub dist: Dist,
 }
 
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+struct PackageRegistry {
+    #[serde(rename = "dist-tags")]
+    dist_tags: BTreeMap<String, String>,
+    #[serde(default)]
+    time: BTreeMap<String, String>,
+    #[serde(default)]
+    versions: BTreeMap<String, Package>,
+}
+
 pub async fn get_remote_package_data(source: &String) -> Result<(String, String), reqwest::Error> {
     let r = reqwest::get(format!(
-        "https://mirrors.cloud.tencent.com/npm/@champ-r/{source}/latest"
+        "https://registry.npmjs.org/@champ-r%2F{source}/latest"
     ))
-    .await?;
+    .await?
+    .error_for_status()?;
     let pak = r.json::<Package>().await?;
     Ok((pak.version, pak.dist.tarball))
+}
+
+pub async fn get_remote_package_metadata(
+    source: &str,
+) -> Result<(String, String), reqwest::Error> {
+    let r = reqwest::get(format!(
+        "https://registry.npmjs.org/@champ-r%2F{source}"
+    ))
+    .await?
+    .error_for_status()?;
+    let registry = r.json::<PackageRegistry>().await?;
+    let Some(latest) = registry.dist_tags.get("latest") else {
+        return Ok((String::new(), String::new()));
+    };
+
+    let display_version = registry
+        .versions
+        .get(latest)
+        .map(|package| {
+            if package.source_version.is_empty() {
+                package.version.clone()
+            } else {
+                package.source_version.clone()
+            }
+        })
+        .unwrap_or_else(|| latest.clone());
+    let updated_at = registry.time.get(latest).cloned().unwrap_or_default();
+
+    Ok((display_version, updated_at))
 }
 
 pub async fn download_and_extract_tgz(url: &str, output_dir: &str) -> io::Result<()> {
@@ -398,6 +490,50 @@ pub async fn read_local_build_file(file_path: String) -> anyhow::Result<Value> {
         .with_context(|| format!("Failed to parse JSON in file: {}", &file_path))?;
 
     Ok(parsed)
+}
+
+pub async fn list_builds_from_package_by_alias(
+    source: &String,
+    champion_alias: &str,
+) -> Result<Vec<builds::BuildSection>, FetchError> {
+    let (version, tar_url) = get_remote_package_data(source)
+        .await
+        .map_err(|err| {
+            warn!("package metadata for {}: {:?}", source, err);
+            FetchError::Failed
+        })?;
+
+    let output_dir = format!(".npm/{source}/{version}");
+    let dest_folder = format!("{output_dir}/package");
+
+    if !Path::new(&dest_folder).exists() {
+        if fs::create_dir_all(&output_dir).is_err() {
+            return Err(FetchError::Failed);
+        }
+        download_and_extract_tgz(&tar_url, &output_dir)
+            .await
+            .map_err(|err| {
+                warn!("package download for {}: {:?}", source, err);
+                FetchError::Failed
+            })?;
+    }
+
+    let files = read_from_local_folder(&dest_folder)
+        .await
+        .map_err(|err| {
+            warn!("package read for {}: {:?}", source, err);
+            FetchError::Failed
+        })?;
+
+    files
+        .into_iter()
+        .find(|sections| {
+            sections
+                .first()
+                .map(|section| section.alias.eq_ignore_ascii_case(champion_alias))
+                .unwrap_or(false)
+        })
+        .ok_or(FetchError::Failed)
 }
 
 pub async fn read_from_local_folder(
@@ -518,15 +654,11 @@ mod tests {
     }
 
     #[test]
-    fn resolve_service_url_uses_local_default_for_debug_runs() {
+    fn resolve_service_url_uses_build_url_when_no_override_exists() {
         assert_eq!(
             resolve_service_url_from_sources(None, None, true, "http://build.local:3030"),
-            DEFAULT_LOCAL_SERVICE_URL
+            "http://build.local:3030"
         );
-    }
-
-    #[test]
-    fn resolve_service_url_uses_build_url_for_packaged_runs() {
         assert_eq!(
             resolve_service_url_from_sources(None, None, false, "http://build.local:3030"),
             "http://build.local:3030"

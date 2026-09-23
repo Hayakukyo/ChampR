@@ -14,6 +14,8 @@ const DIR_KEY: &str = "--install-directory=";
 const LCU_COMMAND: &str = "Get-CimInstance Win32_Process -Filter \"name = 'LeagueClientUx.exe'\" | Select-Object -ExpandProperty CommandLine";
 #[cfg(target_os = "windows")]
 const LCU_PROCESS_ID_COMMAND: &str = "Get-Process LeagueClientUx -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Id";
+#[cfg(target_os = "windows")]
+const GAME_PROCESS_ID_COMMAND: &str = "Get-CimInstance Win32_Process -Filter \"name = 'League of Legends.exe'\" | Select-Object -First 1 -ExpandProperty ProcessId";
 
 lazy_static! {
     static ref PORT_REGEXP: regex::Regex = regex::Regex::new(r"--app-port=\d+").unwrap();
@@ -194,6 +196,24 @@ pub fn get_lcu_process_id() -> Option<u32> {
 #[cfg(not(target_os = "windows"))]
 pub fn get_lcu_process_id() -> Option<u32> {
     get_non_windows_lcu_process().ok().map(|(pid, _)| pid)
+}
+
+#[cfg(target_os = "windows")]
+pub fn get_game_process_id() -> Option<u32> {
+    match run_powershell(GAME_PROCESS_ID_COMMAND, false) {
+        Ok(out) => out
+            .stdout()
+            .and_then(|stdout| stdout.trim().parse::<u32>().ok()),
+        Err(err) => {
+            error!("game process lookup error: {:?}", err);
+            None
+        }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn get_game_process_id() -> Option<u32> {
+    None
 }
 
 #[cfg(not(target_os = "windows"))]
