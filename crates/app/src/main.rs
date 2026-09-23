@@ -774,13 +774,20 @@ async fn lcu_monitor_task(
 
                                     // Update Hextech overlay and rune window.
                                     let show_hextech = state.lock().unwrap().hextech_overlay;
-                                    if show_hextech {
+                                    if show_hextech && is_aram_mayhem_game(&current_auth_url).await {
                                         show_hextech_overlay(
                                             hextech_weak.clone(),
                                             state.clone(),
                                             cid,
                                         )
                                         .await;
+                                    } else {
+                                        let hw = hextech_weak.clone();
+                                        let _ = slint::invoke_from_event_loop(move || {
+                                            if let Some(win) = hw.upgrade() {
+                                                win.hide().unwrap();
+                                            }
+                                        });
                                     }
 
                                     let rw = runes_weak.clone();
@@ -807,6 +814,35 @@ async fn lcu_monitor_task(
 
         tokio::time::sleep(Duration::from_millis(2500)).await;
     }
+}
+
+async fn is_aram_mayhem_game(auth_url: &str) -> bool {
+    let endpoint = format!("https://{auth_url}/lol-gameflow/v1/session");
+    let Ok(session) = lcu_api::make_get_request::<Value>(&endpoint).await else {
+        // Fail open: some Tencent client builds expose less gameflow metadata.
+        // The user can still disable the overlay from the main window.
+        return true;
+    };
+
+    let queue_id = session
+        .pointer("/gameData/queue/id")
+        .and_then(Value::as_i64)
+        .or_else(|| session.pointer("/gameData/queueId").and_then(Value::as_i64))
+        .or_else(|| session.get("queueId").and_then(Value::as_i64));
+
+    if matches!(queue_id, Some(2400 | 3100 | 3270)) {
+        return true;
+    }
+
+    let game_mode = session
+        .pointer("/gameData/queue/gameMode")
+        .and_then(Value::as_str)
+        .or_else(|| session.pointer("/gameData/gameMode").and_then(Value::as_str))
+        .or_else(|| session.get("gameMode").and_then(Value::as_str))
+        .unwrap_or_default()
+        .to_ascii_uppercase();
+
+    game_mode == "KIWI" || game_mode.contains("MAYHEM")
 }
 
 // ---------------------------------------------------------------------------
