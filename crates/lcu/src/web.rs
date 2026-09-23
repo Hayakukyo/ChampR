@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tar::Archive;
 
-use crate::builds::{self, BuildData, ItemBuild};
+use crate::{\n    builds::{self, BuildData, ItemBuild},\n    source::{builtin_sources, SourceItem},\n};
 
 const BUILD_SERVER_URL: &str = env!("CHAMPR_BUILD_SERVER_URL");
 const DATA_DRAGON_BASE_URL: &str = "https://ddragon.leagueoflegends.com";
@@ -67,6 +67,49 @@ struct ChampionListResponse {
 
 pub fn service_url() -> &'static str {
     SERVICE_URL.get_or_init(resolve_service_url).as_str()
+}
+
+pub async fn fetch_sources() -> Result<Vec<SourceItem>, FetchError> {
+    let url = format!("{}/api/sources", service_url());
+    match reqwest::get(url).await {
+        Ok(resp) if resp.status().is_success() => {
+            resp.json::<Vec<SourceItem>>().await.map_err(|err| {
+                warn!("fetch sources deserialize: {:?}", err);
+                FetchError::Failed
+            })
+        }
+        Ok(resp) => {
+            warn!("fetch sources returned status {}", resp.status());
+            Err(FetchError::Failed)
+        }
+        Err(err) => {
+            warn!("fetch sources: {:?}", err);
+            Err(FetchError::Failed)
+        }
+    }
+}
+
+pub async fn fetch_sources_with_fallback() -> Vec<SourceItem> {
+    let mut sources = builtin_sources();
+
+    if let Ok(live_sources) = fetch_sources().await {
+        for live in live_sources {
+            if let Some(existing) = sources.iter_mut().find(|item| item.value == live.value) {
+                *existing = live;
+            } else {
+                sources.push(live);
+            }
+        }
+    }
+
+    sources
+}
+
+pub async fn source_is_live(source: &str) -> bool {
+    fetch_sources()
+        .await
+        .map(|items| items.iter().any(|item| item.value == source))
+        .unwrap_or(false)
 }
 
 fn resolve_service_url() -> String {
@@ -199,13 +242,17 @@ pub async fn fetch_champion_list() -> Result<ChampionsMap, FetchError> {
     fetch_champion_list_for_version(&version).await
 }
 
-pub async fn init_for_ui() -> Result<(ChampionsMap, Vec<DataDragonRune>), FetchError> {
+pub async fn init_for_ui(
+) -> Result<(Vec<SourceItem>, ChampionsMap, Vec<DataDragonRune>), FetchError> {
     let version = fetch_latest_data_dragon_version().await?;
-    try_join(
+    let (champions, runes) = try_join(
         fetch_champion_list_for_version(&version),
         fetch_data_dragon_runes_for_version(&version),
     )
-    .await
+    .await?;
+    let sources = fetch_sources_with_fallback().await;
+
+    Ok((sources, champions, runes))
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -398,6 +445,50 @@ pub async fn read_local_build_file(file_path: String) -> anyhow::Result<Value> {
         .with_context(|| format!("Failed to parse JSON in file: {}", &file_path))?;
 
     Ok(parsed)
+}
+
+pub async fn list_builds_from_package_by_alias(
+    source: &String,
+    champion_alias: &str,
+) -> Result<Vec<builds::BuildSection>, FetchError> {
+    let (version, tar_url) = get_remote_package_data(source)
+        .await
+        .map_err(|err| {
+            warn!("package metadata for {}: {:?}", source, err);
+            FetchError::Failed
+        })?;
+
+    let output_dir = format!(".npm/{source}/{version}");
+    let dest_folder = format!("{output_dir}/package");
+
+    if !Path::new(&dest_folder).exists() {
+        if fs::create_dir_all(&output_dir).is_err() {
+            return Err(FetchError::Failed);
+        }
+        download_and_extract_tgz(&tar_url, &output_dir)
+            .await
+            .map_err(|err| {
+                warn!("package download for {}: {:?}", source, err);
+                FetchError::Failed
+            })?;
+    }
+
+    let files = read_from_local_folder(&dest_folder)
+        .await
+        .map_err(|err| {
+            warn!("package read for {}: {:?}", source, err);
+            FetchError::Failed
+        })?;
+
+    files
+        .into_iter()
+        .find(|sections| {
+            sections
+                .first()
+                .map(|section| section.alias.eq_ignore_ascii_case(champion_alias))
+                .unwrap_or(false)
+        })
+        .ok_or(FetchError::Failed)
 }
 
 pub async fn read_from_local_folder(
