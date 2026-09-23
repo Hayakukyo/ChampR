@@ -74,6 +74,16 @@ fn source_models(state: &AppState) -> Vec<SourceModel> {
             label: SharedString::from(&source.label),
             value: SharedString::from(&source.value),
             mode: SharedString::from(source.mode_label()),
+            version: SharedString::from(if source.version.is_empty() {
+                "Version: unavailable".to_string()
+            } else {
+                format!("Version: {}", source.version)
+            }),
+            updated: SharedString::from(if source.updated_at.is_empty() {
+                "Updated: unavailable".to_string()
+            } else {
+                format!("Updated: {}", format_source_timestamp(&source.updated_at))
+            }),
             selected: state.selected_sources.iter().any(|value| value == &source.value),
         })
         .collect()
@@ -94,6 +104,17 @@ fn rune_source_label(state: &AppState) -> SharedString {
         .find(|source| source.value == state.rune_source)
         .map(|source| SharedString::from(&source.label))
         .unwrap_or_else(|| SharedString::from(&state.rune_source))
+}
+
+fn format_source_timestamp(value: &str) -> String {
+    let value = value.trim();
+    if value.len() >= 16 && value.as_bytes().get(10) == Some(&b'T') {
+        format!("{} {}", &value[..10], &value[11..16])
+    } else if value.len() >= 10 {
+        value[..10].to_string()
+    } else {
+        value.to_string()
+    }
 }
 
 fn settings_snapshot(state: &AppState) -> Settings {
@@ -267,6 +288,44 @@ fn main() {
         }
     });
 
+    // -- Main window: rune source selection --
+    sources_window.on_rune_source_selected({
+        let state_c = state.clone();
+        let sources_weak = sources_window.as_weak();
+        let runes_weak = runes_window.as_weak();
+        let handle = rt_handle_ref.clone();
+        move |label| {
+            let label = label.to_string();
+            let (source, champion_id, settings) = {
+                let mut s = state_c.lock().unwrap();
+                let source = s
+                    .sources
+                    .iter()
+                    .find(|item| item.label == label)
+                    .map(|item| item.value.clone())
+                    .unwrap_or_else(|| s.rune_source.clone());
+                s.rune_source = source.clone();
+                (source, s.current_champion_id, settings_snapshot(&s))
+            };
+            settings.save();
+
+            if let Some(win) = sources_weak.upgrade() {
+                win.set_rune_source_label(SharedString::from(&label));
+            }
+            if let Some(win) = runes_weak.upgrade() {
+                win.set_rune_source_label(SharedString::from(&label));
+            }
+
+            if champion_id > 0 {
+                let rw = runes_weak.clone();
+                let st = state_c.clone();
+                handle.spawn(async move {
+                    fetch_and_show_runes(rw, st, source, champion_id).await;
+                });
+            }
+        }
+    });
+
     // -- Runes window: close --
     let runes_weak = runes_window.as_weak();
     runes_window.on_close_requested(move || {
@@ -336,6 +395,10 @@ fn main() {
                 (source, s.current_champion_id, settings_snapshot(&s))
             };
             settings.save();
+
+            if let Some(win) = sources_window.as_weak().upgrade() {
+                win.set_rune_source_label(SharedString::from(&label));
+            }
 
             if champion_id > 0 {
                 let rw = weak.clone();
@@ -430,6 +493,8 @@ async fn fetch_sources_task(
                 if let Some(win) = sources_weak.upgrade() {
                     win.set_sources(ModelRc::new(VecModel::from(models)));
                     win.set_has_selected_sources(has_selected);
+                    win.set_rune_source_labels(ModelRc::new(VecModel::from(rune_labels.clone())));
+                    win.set_rune_source_label(current_rune_label.clone());
                     win.set_status(SharedString::from("success"));
                 }
                 if let Some(win) = runes_weak.upgrade() {
