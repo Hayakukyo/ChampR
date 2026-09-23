@@ -517,46 +517,50 @@ export component HextechWindow inherits Window {
             padding: 10px;
             spacing: 6px;
 
-            HorizontalBox {
-                spacing: 6px;
+            WindowMoveArea {
+                height: 34px;
 
-                VerticalBox {
-                    horizontal-stretch: 1;
-                    spacing: 1px;
+                HorizontalBox {
+                    spacing: 6px;
 
-                    Text {
-                        text: root.champion-name != ""
-                            ? root.champion-name + " · 海克斯推荐"
-                            : "海克斯推荐";
-                        font-size: 15px;
-                        font-weight: 700;
-                        color: #ffffff;
-                        overflow: elide;
+                    VerticalBox {
+                        horizontal-stretch: 1;
+                        spacing: 1px;
+
+                        Text {
+                            text: root.champion-name != ""
+                                ? root.champion-name + " · 海克斯推荐"
+                                : "海克斯推荐";
+                            font-size: 15px;
+                            font-weight: 700;
+                            color: #ffffff;
+                            overflow: elide;
+                        }
+
+                        Text {
+                            text: root.source-text + " · 拖动这里移动";
+                            font-size: 9px;
+                            color: #aab2c0;
+                        }
                     }
 
-                    Text {
-                        text: root.source-text;
-                        font-size: 9px;
-                        color: #aab2c0;
-                    }
-                }
+                    Rectangle {
+                        width: 30px;
+                        height: 24px;
+                        border-radius: 5px;
+                        background: #ffffff16;
 
-                Rectangle {
-                    width: 30px;
-                    height: 24px;
-                    border-radius: 5px;
-                    background: #ffffff16;
+                        Text {
+                            text: "×";
+                            font-size: 15px;
+                            color: #d8dde6;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
 
-                    Text {
-                        text: "×";
-                        font-size: 15px;
-                        color: #d8dde6;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                    }
-
-                    TouchArea {
-                        clicked => { root.close-requested(); }
+                        TouchArea {
+                            clicked => { root.close-requested(); }
+                        }
                     }
                 }
             }
