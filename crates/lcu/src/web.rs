@@ -18,6 +18,7 @@ use tar::Archive;
 
 use crate::{
     builds::{self, BuildData, ItemBuild},
+    opgg_native,
     source::{builtin_sources, SourceItem},
 };
 
@@ -72,46 +73,15 @@ pub fn service_url() -> &'static str {
 }
 
 pub async fn fetch_sources() -> Result<Vec<SourceItem>, FetchError> {
-    let url = format!("{}/api/sources", service_url());
-    match reqwest::get(url).await {
-        Ok(resp) if resp.status().is_success() => {
-            resp.json::<Vec<SourceItem>>().await.map_err(|err| {
-                warn!("fetch sources deserialize: {:?}", err);
-                FetchError::Failed
-            })
-        }
-        Ok(resp) => {
-            warn!("fetch sources returned status {}", resp.status());
-            Err(FetchError::Failed)
-        }
-        Err(err) => {
-            warn!("fetch sources: {:?}", err);
-            Err(FetchError::Failed)
-        }
-    }
+    Ok(builtin_sources())
 }
 
 pub async fn fetch_sources_with_fallback() -> Vec<SourceItem> {
-    let mut sources = builtin_sources();
-
-    if let Ok(live_sources) = fetch_sources().await {
-        for live in live_sources {
-            if let Some(existing) = sources.iter_mut().find(|item| item.value == live.value) {
-                *existing = live;
-            } else {
-                sources.push(live);
-            }
-        }
-    }
-
-    sources
+    builtin_sources()
 }
 
 pub async fn source_is_live(source: &str) -> bool {
-    fetch_sources()
-        .await
-        .map(|items| items.iter().any(|item| item.value == source))
-        .unwrap_or(false)
+    opgg_native::is_native_source(source)
 }
 
 fn resolve_service_url() -> String {
@@ -284,22 +254,39 @@ pub async fn list_builds_by_alias(
     source: &String,
     champion: &String,
 ) -> Result<Vec<builds::BuildSection>, FetchError> {
-    let url = format!(
-        "{}/api/source/{source}/champion-alias/{champion}",
-        service_url()
-    );
-    list_builds(&url).await
+    if opgg_native::is_native_source(source) {
+        let champions = fetch_champion_list().await?;
+        let champion_id = champions
+            .values()
+            .find(|item| item.id.eq_ignore_ascii_case(champion))
+            .and_then(|item| item.key.parse::<i64>().ok())
+            .ok_or(FetchError::Failed)?;
+
+        return opgg_native::fetch_builds(champion_id, champion, source)
+            .await
+            .map_err(|err| {
+                warn!("direct OP.GG fetch failed: {:?}", err);
+                FetchError::Failed
+            });
+    }
+
+    Err(FetchError::Failed)
 }
 
 pub async fn list_builds_by_id(
     source: &String,
     champion_id: i64,
 ) -> Result<Vec<builds::BuildSection>, FetchError> {
-    let url = format!(
-        "{}/api/source/{source}/champion-id/{champion_id}",
-        service_url()
-    );
-    list_builds(&url).await
+    if opgg_native::is_native_source(source) {
+        return opgg_native::fetch_builds(champion_id, &champion_id.to_string(), source)
+            .await
+            .map_err(|err| {
+                warn!("direct OP.GG fetch failed: {:?}", err);
+                FetchError::Failed
+            });
+    }
+
+    Err(FetchError::Failed)
 }
 
 pub async fn fetch_champion_runes(
@@ -404,9 +391,10 @@ pub struct Package {
 
 pub async fn get_remote_package_data(source: &String) -> Result<(String, String), reqwest::Error> {
     let r = reqwest::get(format!(
-        "https://mirrors.cloud.tencent.com/npm/@champ-r/{source}/latest"
+        "https://registry.npmjs.org/@champ-r%2F{source}/latest"
     ))
-    .await?;
+    .await?
+    .error_for_status()?;
     let pak = r.json::<Package>().await?;
     Ok((pak.version, pak.dist.tarball))
 }
