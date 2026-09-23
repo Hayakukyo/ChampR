@@ -1,0 +1,24 @@
+name: LCU Compile Diagnostics
+
+on:
+  push:
+    branches:
+      - ci-lcu-debug
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cargo check LCU (capture only)
+        shell: pwsh
+        run: |
+          cargo check -p lcu 2>&1 | Tee-Object cargo-check.log
+          exit 0
+      - name: Print compiler output
+        shell: pwsh
+        run: Get-Content cargo-check.log
