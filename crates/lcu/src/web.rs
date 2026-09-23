@@ -23,7 +23,6 @@ use crate::{
 
 const BUILD_SERVER_URL: &str = env!("CHAMPR_BUILD_SERVER_URL");
 const DATA_DRAGON_BASE_URL: &str = "https://ddragon.leagueoflegends.com";
-const DEFAULT_LOCAL_SERVICE_URL: &str = "http://127.0.0.1:3030";
 const SERVER_URL_ENV_KEY: &str = "CHAMPR_SERVER_URL";
 
 static SERVICE_URL: OnceLock<String> = OnceLock::new();
@@ -130,19 +129,13 @@ fn resolve_service_url() -> String {
 fn resolve_service_url_from_sources(
     runtime_env: Option<&str>,
     env_file: Option<&str>,
-    use_local_default: bool,
+    _use_local_default: bool,
     build_service_url: &str,
 ) -> String {
     runtime_env
         .and_then(normalize_service_url)
         .or_else(|| env_file.and_then(normalize_service_url))
-        .unwrap_or_else(|| {
-            if use_local_default {
-                DEFAULT_LOCAL_SERVICE_URL.to_string()
-            } else {
-                build_service_url.to_string()
-            }
-        })
+        .unwrap_or_else(|| build_service_url.to_string())
 }
 
 fn find_env_file_value(key: &str) -> Option<String> {
@@ -612,15 +605,11 @@ mod tests {
     }
 
     #[test]
-    fn resolve_service_url_uses_local_default_for_debug_runs() {
+    fn resolve_service_url_uses_build_url_when_no_override_exists() {
         assert_eq!(
             resolve_service_url_from_sources(None, None, true, "http://build.local:3030"),
-            DEFAULT_LOCAL_SERVICE_URL
+            "http://build.local:3030"
         );
-    }
-
-    #[test]
-    fn resolve_service_url_uses_build_url_for_packaged_runs() {
         assert_eq!(
             resolve_service_url_from_sources(None, None, false, "http://build.local:3030"),
             "http://build.local:3030"
