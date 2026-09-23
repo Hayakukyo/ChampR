@@ -860,6 +860,100 @@ fn extract_champion_id_from_session(session: Option<&Value>) -> i64 {
 }
 
 // ---------------------------------------------------------------------------
+//  Show ARAM Mayhem augment recommendations for the selected champion
+// ---------------------------------------------------------------------------
+
+async fn show_hextech_overlay(
+    hextech_weak: Weak<HextechWindow>,
+    state: SharedState,
+    champion_id: i64,
+) {
+    let (champion_alias, champion_name, enabled) = {
+        let s = state.lock().unwrap();
+        let champion = s
+            .champions_map
+            .values()
+            .find(|champion| champion.key == champion_id.to_string());
+        (
+            champion.map(|champion| champion.id.clone()).unwrap_or_default(),
+            champion.map(|champion| champion.name.clone()).unwrap_or_default(),
+            s.hextech_overlay,
+        )
+    };
+
+    if !enabled || champion_alias.is_empty() {
+        return;
+    }
+
+    {
+        let weak = hextech_weak.clone();
+        let name = SharedString::from(&champion_name);
+        let _ = slint::invoke_from_event_loop(move || {
+            if let Some(win) = weak.upgrade() {
+                win.set_champion_name(name);
+                win.set_status(SharedString::from("loading"));
+                win.set_source_text(SharedString::from("OP.GG ARAM Mayhem"));
+                win.show().unwrap();
+            }
+        });
+    }
+
+    match mayhem::fetch_augments(&champion_alias).await {
+        Ok(augments) => {
+            let models = augments
+                .into_iter()
+                .enumerate()
+                .map(|(index, augment)| AugmentModel {
+                    rank: (index + 1) as i32,
+                    name: SharedString::from(&augment.name),
+                    rarity: SharedString::from(&augment.rarity),
+                    tier: SharedString::from(if augment.tier > 0 {
+                        format!("Tier {}", augment.tier)
+                    } else {
+                        String::new()
+                    }),
+                    popular: SharedString::from(
+                        augment
+                            .popularity
+                            .map(|value| format!("Popular {:.2}", value))
+                            .unwrap_or_default(),
+                    ),
+                    performance: SharedString::from(
+                        augment
+                            .performance
+                            .map(|value| format!("Perf {:+.2}", value))
+                            .unwrap_or_default(),
+                    ),
+                    description: SharedString::from(&augment.description),
+                })
+                .collect::<Vec<_>>();
+
+            let weak = hextech_weak.clone();
+            let _ = slint::invoke_from_event_loop(move || {
+                if let Some(win) = weak.upgrade() {
+                    win.set_augments(ModelRc::new(VecModel::from(models)));
+                    win.set_status(SharedString::from("success"));
+                    win.show().unwrap();
+                }
+            });
+        }
+        Err(err) => {
+            warn!(
+                "failed to fetch ARAM Mayhem augments for {}: {:?}",
+                champion_alias, err
+            );
+            let weak = hextech_weak.clone();
+            let _ = slint::invoke_from_event_loop(move || {
+                if let Some(win) = weak.upgrade() {
+                    win.set_status(SharedString::from("error"));
+                    win.show().unwrap();
+                }
+            });
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 //  Show champion runes: fetch avatar, populate source list, fetch runes
 // ---------------------------------------------------------------------------
 
