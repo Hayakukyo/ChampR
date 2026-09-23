@@ -197,7 +197,7 @@ fn champion_slug(alias: &str) -> String {
 }
 
 fn parse_page_details(raw: &str) -> anyhow::Result<HashMap<i64, PageDetail>> {
-    let normalized = raw.replace("\\"", """);
+    let normalized = raw.replace("\\\"", "\"");
 
     let pattern = Regex::new(
         r#"\{"id":(?P<id>\d+),"tier":(?P<tier>\d+),"performance":(?P<performance>[^,]+),"popular":(?P<popular>[^,]+),"name":"(?P<name>(?:\\.|[^"])*)","key":"(?:\\.|[^"])*","largeIcon":"(?:\\.|[^"])*","smallIcon":"(?:\\.|[^"])*","rarity":(?P<rarity>\d+),"desc":"(?P<desc>(?:\\.|[^"])*)","tooltip""#,
