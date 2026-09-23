@@ -491,10 +491,10 @@ export component RunesWindow inherits Window {
 
 export component HextechWindow inherits Window {
     title: "ChampR - Hextech Recommendations";
-    preferred-width: 300px;
-    preferred-height: 370px;
-    min-width: 280px;
-    min-height: 330px;
+    width: 340px;
+    height: 390px;
+    min-width: 340px;
+    min-height: 390px;
     always-on-top: true;
     background: transparent;
     default-font-family: "Microsoft YaHei UI";
@@ -508,7 +508,7 @@ export component HextechWindow inherits Window {
 
     Rectangle {
         border-radius: 10px;
-        background: #111722dc;
+        background: #111722c8;
         border-width: 1px;
         border-color: #ffffff24;
 
@@ -592,7 +592,7 @@ export component HextechWindow inherits Window {
                 vertical-stretch: 1;
 
                 for augment[index] in root.augments : Rectangle {
-                    height: 49px;
+                    height: 51px;
                     border-radius: 6px;
                     background: #ffffff0e;
 
@@ -645,6 +645,7 @@ export component HextechWindow inherits Window {
                             }
 
                             Text {
+                                width: 252px;
                                 text: augment.description;
                                 font-size: 9px;
                                 color: #c3c9d2;
@@ -652,7 +653,8 @@ export component HextechWindow inherits Window {
                             }
 
                             HorizontalBox {
-                                spacing: 8px;
+                                width: 252px;
+                                spacing: 7px;
 
                                 Text {
                                     text: augment.rarity;
