@@ -10,6 +10,10 @@ pub struct SourceItem {
     pub is_aram: Option<bool>,
     #[serde(rename(serialize = "isUrf", deserialize = "isURF"))]
     pub is_urf: Option<bool>,
+    #[serde(default)]
+    pub version: String,
+    #[serde(default)]
+    pub updated_at: String,
 }
 
 impl SourceItem {
@@ -24,36 +28,26 @@ impl SourceItem {
     }
 }
 
-/// Classic ChampR package-backed sources.
+fn source(label: &str, value: &str, is_aram: bool, is_urf: bool) -> SourceItem {
+    SourceItem {
+        label: label.to_string(),
+        value: value.to_string(),
+        is_aram: Some(is_aram),
+        is_urf: Some(is_urf),
+        version: String::new(),
+        updated_at: String::new(),
+    }
+}
+
+/// Sources supported by the restored multi-source UI.
 ///
-/// These are merged with the live service source list at runtime. Live
-/// service entries override labels for duplicate keys, while the classic
-/// package sources stay available for the old multi-source workflow.
+/// OP.GG sources are fetched directly. Classic ChampR sources are backed by
+/// their historical @champ-r/* packages from the public npm registry.
 pub fn builtin_sources() -> Vec<SourceItem> {
     vec![
-        SourceItem {
-            label: "OP.GG".to_string(),
-            value: "op.gg".to_string(),
-            is_aram: Some(false),
-            is_urf: Some(false),
-        },
-        SourceItem {
-            label: "OP.GG ARAM".to_string(),
-            value: "op.gg-aram".to_string(),
-            is_aram: Some(true),
-            is_urf: Some(false),
-        },
-        SourceItem {
-            label: "Lolalytics".to_string(),
-            value: "lolalytics".to_string(),
-            is_aram: Some(false),
-            is_urf: Some(false),
-        },
-        SourceItem {
-            label: "MurderBridge".to_string(),
-            value: "murderbridge".to_string(),
-            is_aram: Some(true),
-            is_urf: Some(false),
-        },
+        source("OP.GG", "op.gg", false, false),
+        source("OP.GG ARAM", "op.gg-aram", true, false),
+        source("Lolalytics", "lolalytics", false, false),
+        source("MurderBridge", "murderbridge", true, false),
     ]
 }
