@@ -1,0 +1,47 @@
+name: Build Windows EXE
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - restore-multi-source
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build release EXE
+        run: cargo build -p champr --release
+
+      - name: Stage portable package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item target\release\champr.exe dist\ChampR.exe
+          Copy-Item LICENSE dist\LICENSE.txt
+          @"
+          ChampR portable Windows build
+
+          1. Start League of Legends and log in.
+          2. Run ChampR.exe.
+          3. Approve the one-time administrator prompt used to read LCU credentials.
+          4. Choose data sources, import builds, and select a rune source in champion select.
+
+          This fork retains the original project's LGPL-2.1 license.
+          "@ | Set-Content -Encoding UTF8 dist\README.txt
+
+      - name: Upload portable build
+        uses: actions/upload-artifact@v4
+        with:
+          name: ChampR-Windows-x64
+          path: dist
+          if-no-files-found: error
