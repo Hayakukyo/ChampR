@@ -383,8 +383,13 @@ async fn fetch_sources_task(
                 s.champions_map = champions_map;
                 s.sources = sources;
 
+                let available_sources = s
+                    .sources
+                    .iter()
+                    .map(|source| source.value.clone())
+                    .collect::<Vec<_>>();
                 s.selected_sources
-                    .retain(|value| s.sources.iter().any(|source| &source.value == value));
+                    .retain(|value| available_sources.iter().any(|source| source == value));
                 if s.selected_sources.is_empty() {
                     if s.sources.iter().any(|source| source.value == DEFAULT_SOURCE_VALUE) {
                         s.selected_sources.push(DEFAULT_SOURCE_VALUE.to_string());
