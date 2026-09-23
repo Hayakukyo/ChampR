@@ -92,7 +92,7 @@ pub async fn fetch_augments(
     };
 
     let mut items = Vec::new();
-    for stat in stats.data.into_iter().take(8) {
+    for stat in stats.data.into_iter().take(6) {
         let page = page_details.get(&stat.id).cloned().unwrap_or_default();
         let local = client_details.get(&stat.id);
 
