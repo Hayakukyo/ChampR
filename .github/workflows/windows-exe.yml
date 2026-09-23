@@ -2,6 +2,11 @@ name: Build Windows EXE
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - restore-multi-source
+    paths:
+      - .github/build-exe-trigger
 
 permissions:
   contents: read
@@ -35,7 +40,7 @@ jobs:
           1. Start League of Legends and log in.
           2. Run ChampR.exe.
           3. Approve the one-time administrator prompt used to read LCU credentials.
-          4. Choose data sources, import builds, and select a rune source in champion select.
+          4. Choose build data sources and click Apply Builds.
           5. Leave "Hextech Overlay" enabled to show champion-specific ARAM Mayhem augment recommendations in an always-on-top window.
 
           This fork retains the original project's LGPL-2.1 license.
