@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(dead_code)]
 pub struct Settings {
     /// Source identifiers the user has checked (e.g. ["op.gg", "u.gg"])
@@ -18,6 +18,16 @@ pub struct Settings {
 
 fn default_true() -> bool {
     true
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            selected_sources: Vec::new(),
+            rune_source: String::new(),
+            hextech_overlay: true,
+        }
+    }
 }
 
 fn settings_path() -> PathBuf {
