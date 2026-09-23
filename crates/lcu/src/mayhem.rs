@@ -62,7 +62,7 @@ fn champion_slug(alias: &str) -> String {
 fn parse_augments(raw: &str) -> anyhow::Result<Vec<AugmentRecommendation>> {
     // Next.js serializes the payload with escaped quotes. Normalizing them
     // makes the embedded augment objects straightforward to inspect.
-    let normalized = raw.replace("\\"", """);
+    let normalized = raw.replace("\\\"", "\"");
 
     let pattern = Regex::new(
         r#"\{"id":(?P<id>\d+),"tier":(?P<tier>\d+),"performance":(?P<performance>[^,]+),"popular":(?P<popular>[^,]+),"name":"(?P<name>(?:\\.|[^"])*)","key":"(?:\\.|[^"])*","largeIcon":"(?:\\.|[^"])*","smallIcon":"(?:\\.|[^"])*","rarity":(?P<rarity>\d+),"desc":"(?P<desc>(?:\\.|[^"])*)","tooltip""#,
@@ -133,7 +133,7 @@ fn parse_augments(raw: &str) -> anyhow::Result<Vec<AugmentRecommendation>> {
 }
 
 fn decode_json_fragment(value: &str) -> String {
-    let wrapped = format!(""{value}"");
+    let wrapped = format!("\\\"{value}\\\"");
     serde_json::from_str::<String>(&wrapped).unwrap_or_else(|_| value.to_string())
 }
 
