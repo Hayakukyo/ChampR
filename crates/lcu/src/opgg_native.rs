@@ -261,10 +261,26 @@ fn build_item_set(
         return None;
     }
 
+    let mode_tag = if mode_label == "Ranked" {
+        String::new()
+    } else {
+        format!(" {}", mode_label)
+    };
+    let position_tag = if position.is_empty() || position.eq_ignore_ascii_case(mode_label) {
+        "Build".to_string()
+    } else {
+        position.to_string()
+    };
+    let suffix = if label == "Highest Win Rate" {
+        " (Highest WR)"
+    } else {
+        ""
+    };
+
     Some(ItemBuild {
         title: format!(
-            "[OP.GG] {} {} {} - {}",
-            champion_alias, mode_label, position, label
+            "[OP.GG] {}{} - {}{}",
+            champion_alias, mode_tag, position_tag, suffix
         ),
         associated_maps: vec![map_id],
         associated_champions: vec![champion_id],
