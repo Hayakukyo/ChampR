@@ -3,6 +3,8 @@
     windows_subsystem = "windows"
 )]
 
+mod settings;
+
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -16,13 +18,13 @@ use lcu::{
     lcu_api::{self, make_sub_msg},
     reqwest_websocket::Message,
     serde_json::{from_str, Value},
+    source::SourceItem,
     web::{self, ChampionsMap},
 };
+use settings::Settings;
 
 slint::include_modules!();
 
-#[allow(dead_code)]
-const DEFAULT_SOURCE_LABEL: &str = "OP.GG";
 const DEFAULT_SOURCE_VALUE: &str = "op.gg";
 
 // ---------------------------------------------------------------------------
@@ -36,6 +38,10 @@ struct AppState {
     is_tencent: bool,
     lol_dir: String,
     champions_map: ChampionsMap,
+    sources: Vec<SourceItem>,
+    selected_sources: Vec<String>,
+    rune_source: String,
+    current_champion_id: i64,
     /// Runes for the currently displayed champion, kept so we can index into them.
     current_runes: Vec<Rune>,
 }
@@ -47,12 +53,55 @@ impl Default for AppState {
             is_tencent: false,
             lol_dir: String::new(),
             champions_map: ChampionsMap::new(),
+            sources: Vec::new(),
+            selected_sources: vec![DEFAULT_SOURCE_VALUE.to_string()],
+            rune_source: DEFAULT_SOURCE_VALUE.to_string(),
+            current_champion_id: 0,
             current_runes: Vec::new(),
         }
     }
 }
 
 type SharedState = Arc<Mutex<AppState>>;
+
+fn source_models(state: &AppState) -> Vec<SourceModel> {
+    state
+        .sources
+        .iter()
+        .enumerate()
+        .map(|(index, source)| SourceModel {
+            index: index as i32,
+            label: SharedString::from(&source.label),
+            value: SharedString::from(&source.value),
+            mode: SharedString::from(source.mode_label()),
+            selected: state.selected_sources.iter().any(|value| value == &source.value),
+        })
+        .collect()
+}
+
+fn rune_source_labels(state: &AppState) -> Vec<SharedString> {
+    state
+        .sources
+        .iter()
+        .map(|source| SharedString::from(&source.label))
+        .collect()
+}
+
+fn rune_source_label(state: &AppState) -> SharedString {
+    state
+        .sources
+        .iter()
+        .find(|source| source.value == state.rune_source)
+        .map(|source| SharedString::from(&source.label))
+        .unwrap_or_else(|| SharedString::from(&state.rune_source))
+}
+
+fn settings_snapshot(state: &AppState) -> Settings {
+    Settings {
+        selected_sources: state.selected_sources.clone(),
+        rune_source: state.rune_source.clone(),
+    }
+}
 
 // ---------------------------------------------------------------------------
 //  main
@@ -65,7 +114,15 @@ fn main() {
     let sources_window = SourcesWindow::new().unwrap();
     let runes_window = RunesWindow::new().unwrap();
 
-    let state: SharedState = Arc::new(Mutex::new(AppState::default()));
+    let saved_settings = Settings::load();
+    let mut initial_state = AppState::default();
+    if !saved_settings.selected_sources.is_empty() {
+        initial_state.selected_sources = saved_settings.selected_sources;
+    }
+    if !saved_settings.rune_source.is_empty() {
+        initial_state.rune_source = saved_settings.rune_source;
+    }
+    let state: SharedState = Arc::new(Mutex::new(initial_state));
 
     // -- Apply Builds button --
     let state_c = state.clone();
@@ -83,6 +140,7 @@ fn main() {
             let champions = s.champions_map.clone();
             let dir = s.lol_dir.clone();
             let is_tencent = s.is_tencent;
+            let selected = s.selected_sources.clone();
             drop(s);
 
             if dir.is_empty() {
@@ -97,7 +155,15 @@ fn main() {
                 return;
             }
 
-            let selected = vec![DEFAULT_SOURCE_VALUE.to_string()];
+            if selected.is_empty() {
+                let w = weak.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(win) = w.upgrade() {
+                        win.set_apply_status(SharedString::from("Select at least one source"));
+                    }
+                });
+                return;
+            }
 
             // Set applying state
             let w = weak.clone();
@@ -117,7 +183,7 @@ fn main() {
 
                 let count = logs.lock().unwrap().len();
                 let msg = match result {
-                    Ok(()) => format!("Done! Applied builds for {} champions", count),
+                    Ok(()) => format!("Done! Imported {} source/champion entries", count),
                     Err(()) => "Error applying builds".to_string(),
                 };
 
@@ -128,6 +194,76 @@ fn main() {
                     }
                 });
             });
+        }
+    });
+
+    // -- Build source selection --
+    sources_window.on_source_toggled({
+        let state_c = state.clone();
+        let weak = sources_window.as_weak();
+        move |index, checked| {
+            let (models, has_selected, settings) = {
+                let mut s = state_c.lock().unwrap();
+                if let Some(source) = s.sources.get(index as usize).cloned() {
+                    if checked {
+                        if !s.selected_sources.iter().any(|value| value == &source.value) {
+                            s.selected_sources.push(source.value);
+                        }
+                    } else {
+                        s.selected_sources.retain(|value| value != &source.value);
+                    }
+                }
+                (
+                    source_models(&s),
+                    !s.selected_sources.is_empty(),
+                    settings_snapshot(&s),
+                )
+            };
+            settings.save();
+
+            if let Some(win) = weak.upgrade() {
+                win.set_sources(ModelRc::new(VecModel::from(models)));
+                win.set_has_selected_sources(has_selected);
+                win.set_apply_status(SharedString::from(""));
+            }
+        }
+    });
+
+    sources_window.on_select_all_sources({
+        let state_c = state.clone();
+        let weak = sources_window.as_weak();
+        move || {
+            let (models, settings) = {
+                let mut s = state_c.lock().unwrap();
+                s.selected_sources = s.sources.iter().map(|source| source.value.clone()).collect();
+                (source_models(&s), settings_snapshot(&s))
+            };
+            settings.save();
+
+            if let Some(win) = weak.upgrade() {
+                win.set_sources(ModelRc::new(VecModel::from(models)));
+                win.set_has_selected_sources(true);
+                win.set_apply_status(SharedString::from(""));
+            }
+        }
+    });
+
+    sources_window.on_clear_sources({
+        let state_c = state.clone();
+        let weak = sources_window.as_weak();
+        move || {
+            let (models, settings) = {
+                let mut s = state_c.lock().unwrap();
+                s.selected_sources.clear();
+                (source_models(&s), settings_snapshot(&s))
+            };
+            settings.save();
+
+            if let Some(win) = weak.upgrade() {
+                win.set_sources(ModelRc::new(VecModel::from(models)));
+                win.set_has_selected_sources(false);
+                win.set_apply_status(SharedString::from(""));
+            }
         }
     });
 
@@ -181,10 +317,45 @@ fn main() {
         }
     });
 
+    // -- Runes window: source selection --
+    runes_window.on_rune_source_selected({
+        let state_c = state.clone();
+        let weak = runes_window.as_weak();
+        let handle = rt_handle_ref.clone();
+        move |label| {
+            let label = label.to_string();
+            let (source, champion_id, settings) = {
+                let mut s = state_c.lock().unwrap();
+                let source = s
+                    .sources
+                    .iter()
+                    .find(|item| item.label == label)
+                    .map(|item| item.value.clone())
+                    .unwrap_or_else(|| s.rune_source.clone());
+                s.rune_source = source.clone();
+                (source, s.current_champion_id, settings_snapshot(&s))
+            };
+            settings.save();
+
+            if champion_id > 0 {
+                let rw = weak.clone();
+                let st = state_c.clone();
+                handle.spawn(async move {
+                    fetch_and_show_runes(rw, st, source, champion_id).await;
+                });
+            }
+        }
+    });
+
     // -- Spawn background tasks --
     let sources_weak2 = sources_window.as_weak();
+    let runes_weak_for_sources = runes_window.as_weak();
     let state_c2 = state.clone();
-    rt_handle.spawn(fetch_sources_task(sources_weak2, state_c2));
+    rt_handle.spawn(fetch_sources_task(
+        sources_weak2,
+        runes_weak_for_sources,
+        state_c2,
+    ));
 
     let runes_weak2 = runes_window.as_weak();
     let sources_weak3 = sources_window.as_weak();
@@ -200,18 +371,56 @@ fn main() {
 //  Task: fetch sources + champions + runes metadata at startup
 // ---------------------------------------------------------------------------
 
-async fn fetch_sources_task(sources_weak: Weak<SourcesWindow>, state: SharedState) {
+async fn fetch_sources_task(
+    sources_weak: Weak<SourcesWindow>,
+    runes_weak: Weak<RunesWindow>,
+    state: SharedState,
+) {
     match web::init_for_ui().await {
-        Ok((champions_map, _runes_meta)) => {
-            // Store champions map in shared state
-            {
+        Ok((sources, champions_map, _runes_meta)) => {
+            let (models, has_selected, rune_labels, current_rune_label, settings) = {
                 let mut s = state.lock().unwrap();
                 s.champions_map = champions_map;
-            }
+                s.sources = sources;
+
+                s.selected_sources
+                    .retain(|value| s.sources.iter().any(|source| &source.value == value));
+                if s.selected_sources.is_empty() {
+                    if s.sources.iter().any(|source| source.value == DEFAULT_SOURCE_VALUE) {
+                        s.selected_sources.push(DEFAULT_SOURCE_VALUE.to_string());
+                    } else if let Some(source) = s.sources.first() {
+                        s.selected_sources.push(source.value.clone());
+                    }
+                }
+
+                if !s.sources.iter().any(|source| source.value == s.rune_source) {
+                    s.rune_source = s
+                        .selected_sources
+                        .first()
+                        .cloned()
+                        .or_else(|| s.sources.first().map(|source| source.value.clone()))
+                        .unwrap_or_else(|| DEFAULT_SOURCE_VALUE.to_string());
+                }
+
+                (
+                    source_models(&s),
+                    !s.selected_sources.is_empty(),
+                    rune_source_labels(&s),
+                    rune_source_label(&s),
+                    settings_snapshot(&s),
+                )
+            };
+            settings.save();
 
             slint::invoke_from_event_loop(move || {
                 if let Some(win) = sources_weak.upgrade() {
+                    win.set_sources(ModelRc::new(VecModel::from(models)));
+                    win.set_has_selected_sources(has_selected);
                     win.set_status(SharedString::from("success"));
+                }
+                if let Some(win) = runes_weak.upgrade() {
+                    win.set_rune_source_labels(ModelRc::new(VecModel::from(rune_labels)));
+                    win.set_rune_source_label(current_rune_label);
                 }
             })
             .unwrap();
@@ -254,6 +463,7 @@ async fn lcu_monitor_task(
                     s.auth_url.clear();
                     s.lol_dir.clear();
                     s.is_tencent = false;
+                    s.current_champion_id = 0;
                 }
 
                 let sw = sources_weak.clone();
@@ -285,6 +495,7 @@ async fn lcu_monitor_task(
                 s.auth_url.clear();
                 s.lol_dir.clear();
                 s.is_tencent = false;
+                s.current_champion_id = 0;
             }
         }
 
@@ -387,6 +598,7 @@ async fn lcu_monitor_task(
                                     // Session ended
                                     if current_champion_id != 0 {
                                         current_champion_id = 0;
+                                        state.lock().unwrap().current_champion_id = 0;
                                         let rw = runes_weak.clone();
                                         let _ = slint::invoke_from_event_loop(move || {
                                             if let Some(win) = rw.upgrade() {
@@ -405,6 +617,7 @@ async fn lcu_monitor_task(
 
                                 if cid != current_champion_id && cid > 0 {
                                     current_champion_id = cid;
+                                    state.lock().unwrap().current_champion_id = cid;
                                     info!("champion id changed: {}", cid);
 
                                     // Update runes window
@@ -498,14 +711,21 @@ async fn show_champion_runes(
     // Fetch champion avatar pixels (off UI thread)
     let avatar_pixels = fetch_champion_avatar_pixels(&auth_url, champion_id as u64).await;
 
-    // Determine champion name from champions_map
-    let champion_name = {
+    // Determine champion and source display data from shared state.
+    let (champion_name, rune_source, source_labels, selected_source_label) = {
         let s = state.lock().unwrap();
-        s.champions_map
+        let champion_name = s
+            .champions_map
             .values()
             .find(|c| c.key == champion_id.to_string())
             .map(|c| c.name.clone())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        (
+            champion_name,
+            s.rune_source.clone(),
+            rune_source_labels(&s),
+            rune_source_label(&s),
+        )
     };
 
     // Update the runes window with champion info
@@ -517,6 +737,8 @@ async fn show_champion_runes(
             win.set_champion_id(champion_id as i32);
             win.set_champion_name(champ_name);
             win.set_has_champion(true);
+            win.set_rune_source_labels(ModelRc::new(VecModel::from(source_labels)));
+            win.set_rune_source_label(selected_source_label);
 
             if let Some(px) = avatar_pixels {
                 let buffer = SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(
@@ -531,13 +753,7 @@ async fn show_champion_runes(
         }
     });
 
-    fetch_and_show_runes(
-        runes_weak,
-        state,
-        DEFAULT_SOURCE_VALUE.to_string(),
-        champion_id,
-    )
-    .await;
+    fetch_and_show_runes(runes_weak, state, rune_source, champion_id).await;
 }
 
 // ---------------------------------------------------------------------------
@@ -559,7 +775,24 @@ async fn fetch_and_show_runes(
         }
     });
 
-    match web::list_builds_by_id(&source, champion_id).await {
+    let champion_alias = {
+        let s = state.lock().unwrap();
+        s.champions_map
+            .values()
+            .find(|champion| champion.key == champion_id.to_string())
+            .map(|champion| champion.id.clone())
+            .unwrap_or_default()
+    };
+
+    let sections_result = match web::list_builds_by_id(&source, champion_id).await {
+        Ok(sections) => Ok(sections),
+        Err(_) if !champion_alias.is_empty() => {
+            web::list_builds_from_package_by_alias(&source, &champion_alias).await
+        }
+        Err(err) => Err(err),
+    };
+
+    match sections_result {
         Ok(sections) => {
             let runes: Vec<Rune> = sections.iter().flat_map(|s| s.runes.clone()).collect();
 
