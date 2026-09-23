@@ -133,7 +133,7 @@ pub async fn fetch_augments(
             rarity,
             popularity: stat.popular,
             performance: stat.performance,
-            description: compact_description(&page.description),
+            description: compact_description(&page.description, &name),
         });
     }
 
@@ -246,10 +246,10 @@ fn parse_page_details(raw: &str) -> anyhow::Result<HashMap<i64, PageDetail>> {
     Ok(items)
 }
 
-fn compact_description(value: &str) -> String {
+fn compact_description(value: &str, name: &str) -> String {
     let value = value.trim();
     if value.is_empty() {
-        return "查看效果说明后再选择".to_string();
+        return summary_from_name(name).to_string();
     }
 
     let mut output = value.chars().take(58).collect::<String>();
@@ -257,6 +257,43 @@ fn compact_description(value: &str) -> String {
         output.push('…');
     }
     output
+}
+
+fn summary_from_name(name: &str) -> &'static str {
+    if name.contains("暴击") || name.contains("会心") || name.contains("无尽") {
+        "偏暴击 / 暴击收益"
+    } else if name.contains("攻速")
+        || name.contains("快射")
+        || name.contains("双刀")
+        || name.contains("狂热")
+    {
+        "偏攻速 / 普攻强化"
+    } else if name.contains("吸血")
+        || name.contains("治疗")
+        || name.contains("再生")
+        || name.contains("渴血")
+        || name.contains("虹吸")
+    {
+        "回复 / 吸血 / 生存"
+    } else if name.contains("速度")
+        || name.contains("移速")
+        || name.contains("闪现")
+        || name.contains("踢踏")
+    {
+        "移速 / 机动性"
+    } else if name.contains("护盾")
+        || name.contains("防御")
+        || name.contains("巨人")
+        || name.contains("生命")
+    {
+        "生命 / 防御 / 坦度"
+    } else if name.contains("循环") || name.contains("终极") || name.contains("技能") {
+        "技能循环 / 技能急速"
+    } else if name.contains("法术") || name.contains("魔法") || name.contains("耀光") {
+        "法术 / 技能伤害"
+    } else {
+        "英雄适配型强化"
+    }
 }
 
 fn decode_json_fragment(value: &str) -> String {
